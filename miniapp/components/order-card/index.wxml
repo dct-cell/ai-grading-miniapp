@@ -1,0 +1,12 @@
+<view class="card tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="onOpen">
+  <view class="head">
+    <text class="head__standard">{{order.standardText}}</text>
+    <status-pill text="{{order.stateText}}" tone="{{order.tone}}" />
+  </view>
+  <view class="row">
+    <text class="row__label">{{order.page_count}} 页</text>
+    <text>{{order.amountText}}</text>
+  </view>
+  <view wx:if="{{order.etaText}}" class="muted">{{order.etaText}}</view>
+  <view class="muted">{{order.createdText}}</view>
+</view>

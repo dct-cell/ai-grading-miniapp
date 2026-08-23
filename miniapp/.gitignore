@@ -1,0 +1,9 @@
+# Node 依赖不进仓库
+node_modules/
+
+# 微信开发者工具的私有配置：含本地 appid 与个人设置
+project.private.config.json
+
+# 开发者工具生成的本地产物
+.idea/
+.DS_Store

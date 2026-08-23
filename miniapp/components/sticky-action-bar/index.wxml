@@ -1,0 +1,19 @@
+<view class="action-bar">
+  <view class="action-bar__inner">
+    <view
+      wx:if="{{secondaryLabel}}"
+      class="action-bar__button action-bar__button--secondary {{busy ? 'action-bar__button--disabled' : 'tap-feedback'}}"
+      hover-class="{{busy ? 'none' : 'tap-feedback--active'}}"
+      hover-start-time="0"
+      hover-stay-time="100"
+      bindtap="secondary"
+    >{{secondaryLabel}}</view>
+    <view
+      class="action-bar__button action-bar__button--primary {{danger ? 'action-bar__button--danger' : ''}} {{disabled || busy ? 'action-bar__button--disabled' : 'tap-feedback'}}"
+      hover-class="{{disabled || busy ? 'none' : 'tap-feedback--active'}}"
+      hover-start-time="0"
+      hover-stay-time="100"
+      bindtap="primary"
+    >{{primaryLabel}}</view>
+  </view>
+</view>

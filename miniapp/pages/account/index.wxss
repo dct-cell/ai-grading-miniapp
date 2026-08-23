@@ -1,0 +1,84 @@
+.account-page {
+  padding-top: var(--space-screen-top);
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  min-height: 160rpx;
+  padding: 12rpx 0 30rpx;
+  border-bottom: 1rpx solid var(--line);
+}
+
+.profile__avatar {
+  width: 96rpx;
+  height: 96rpx;
+  flex: none;
+  margin-right: 24rpx;
+  border: 1rpx solid var(--sage);
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--type-page);
+  font-weight: 700;
+  line-height: 96rpx;
+  text-align: center;
+}
+
+.profile__title {
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.profile__id {
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: var(--type-meta);
+}
+
+.settings__row {
+  min-height: 124rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.settings__row image {
+  width: 30rpx;
+  height: 30rpx;
+  opacity: 0.55;
+}
+
+.settings__label {
+  margin-bottom: 5rpx;
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+
+.account-note {
+  margin-top: 52rpx;
+  padding: 26rpx;
+  border-radius: var(--radius-group);
+  background: var(--surface-soft);
+}
+
+.account-note__title {
+  margin-bottom: 8rpx;
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+
+.logout {
+  min-height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 42rpx;
+  border: 1rpx solid rgba(181, 94, 80, 0.24);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--danger);
+  font-size: var(--type-control);
+  font-weight: 600;
+}

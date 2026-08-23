@@ -1,0 +1,10 @@
+{
+  "name": "math-competition-grader-miniapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "微信小程序前端：上传答卷、报价支付、观察批改、下载结果与售后。",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  }
+}

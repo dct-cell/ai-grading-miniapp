@@ -1,0 +1,50 @@
+<view class="picker {{error ? 'picker--error' : ''}}">
+  <view
+    wx:if="{{!file}}"
+    class="picker__empty {{disabled || uploading ? 'picker__empty--off' : 'tap-feedback'}}"
+    hover-class="{{disabled || uploading ? 'none' : 'tap-feedback--active'}}"
+    hover-start-time="0"
+    hover-stay-time="100"
+    bindtap="onChoose"
+    role="button"
+    aria-label="{{placeholder}}"
+  >
+    <image class="picker__icon" src="/assets/icons/pdf.png" mode="aspectFit" />
+    <view class="picker__empty-copy">
+      <text class="picker__title">{{placeholder}}</text>
+      <text class="picker__hint">点击从微信会话中选择 PDF</text>
+    </view>
+    <text class="picker__choose">选择</text>
+  </view>
+
+  <view wx:else class="picker__file {{disabled ? 'picker__file--off' : ''}}">
+    <image class="picker__icon" src="/assets/icons/pdf.png" mode="aspectFit" />
+    <view class="picker__info">
+      <view class="picker__name">{{file.name}}</view>
+      <view class="picker__size">PDF · {{sizeText}}</view>
+    </view>
+    <view
+      wx:if="{{!uploading && !disabled}}"
+      class="picker__clear tap-feedback"
+      hover-class="tap-feedback--active"
+      hover-start-time="0"
+      hover-stay-time="100"
+      catchtap="onClear"
+      role="button"
+      aria-label="移除文件"
+    >
+      <image src="/assets/icons/close.png" mode="aspectFit" />
+    </view>
+  </view>
+
+  <view wx:if="{{uploading}}" class="picker__progress">
+    <view wx:if="{{!indeterminate}}" class="picker__track">
+      <view class="picker__bar" style="width:{{progress}}%"></view>
+    </view>
+    <view class="picker__progress-copy">
+      <text>{{indeterminate ? '正在安全上传两份文件' : '正在上传答卷'}}</text>
+      <text wx:if="{{!indeterminate}}" class="mono-number">{{progress}}%</text>
+    </view>
+  </view>
+  <view wx:if="{{error}}" class="inline-error">{{error}}</view>
+</view>

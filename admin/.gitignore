@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# Playwright artefacts
+test-results/
+playwright-report/
+.playwright/

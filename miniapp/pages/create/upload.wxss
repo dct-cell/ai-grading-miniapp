@@ -1,0 +1,49 @@
+.create-page {
+  padding-top: 0;
+}
+
+.create-lead {
+  margin-bottom: 44rpx;
+}
+
+.create-lead__title {
+  margin-bottom: 10rpx;
+  font-size: var(--type-page);
+  font-weight: 700;
+  letter-spacing: -0.6rpx;
+}
+
+.file-section {
+  margin-bottom: var(--space-section);
+}
+
+.file-section--secondary {
+  padding-top: 8rpx;
+}
+
+.file-section__head {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-bottom: 8rpx;
+  font-size: var(--type-section);
+  font-weight: 600;
+}
+
+.required,
+.optional {
+  padding: 4rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.required {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.optional {
+  color: var(--muted);
+  background: var(--surface-soft);
+}

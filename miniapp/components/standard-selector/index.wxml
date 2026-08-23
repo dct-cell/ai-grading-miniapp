@@ -1,0 +1,22 @@
+<view class="standards">
+  <view
+    wx:for="{{options}}"
+    wx:key="value"
+    class="standard tap-feedback {{value === item.value ? 'standard--selected' : ''}} {{disabled ? 'standard--disabled' : ''}}"
+    data-value="{{item.value}}"
+    hover-class="{{disabled ? 'none' : 'tap-feedback--active'}}"
+    hover-start-time="0"
+    hover-stay-time="100"
+    bindtap="choose"
+    aria-label="{{item.label}}"
+  >
+    <view class="standard__copy">
+      <view class="standard__label">{{item.label}}</view>
+      <view class="standard__hint">{{item.hint}}</view>
+    </view>
+    <view class="standard__mark">
+      <icon wx:if="{{value === item.value}}" type="success" size="22" color="#285A4A" />
+      <view wx:else class="standard__empty" />
+    </view>
+  </view>
+</view>

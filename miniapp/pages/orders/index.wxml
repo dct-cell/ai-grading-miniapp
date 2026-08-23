@@ -1,0 +1,49 @@
+<navigation-bar title="任务记录" />
+<view class="page orders-page">
+  <view class="orders-lead">
+    <view class="orders-lead__title">你的每份批改档案</view>
+    <view class="muted">查看当前状态、下载报告，或在期限内处理售后。</view>
+  </view>
+  <view class="tabs">
+    <view
+      wx:for="{{tabs}}"
+      wx:key="key"
+      class="tabs__item tap-feedback {{activeTab === item.key ? 'tabs__item--on' : ''}}"
+      hover-class="tap-feedback--active"
+      hover-start-time="0"
+      hover-stay-time="100"
+      data-key="{{item.key}}"
+      bindtap="switchTab"
+    >
+      {{item.label}}
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="orders-loading">
+    <view wx:for="{{skeletonRows}}" wx:key="*this" class="orders-loading__row">
+      <view class="skeleton orders-loading__dot" />
+      <view class="orders-loading__copy"><view class="skeleton orders-loading__line"/><view class="skeleton orders-loading__line orders-loading__line--short"/></view>
+    </view>
+  </view>
+  <view wx:elif="{{error}}" class="error-panel">
+    <view class="error">{{error}}</view>
+    <view class="btn btn--ghost tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="reload">重试</view>
+  </view>
+  <view wx:elif="{{orders.length === 0}}" class="orders-empty">
+    <view class="orders-empty__geometry"><image src="/assets/geometry-proof.png" mode="aspectFit" /></view>
+    <view class="orders-empty__title">还没有任务</view>
+    <view class="muted">提交第一份答卷，批改记录会保存在这里。</view>
+    <view class="btn tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="goCreate">提交答卷</view>
+  </view>
+
+  <view wx:else class="orders-list list-surface">
+    <order-row
+      wx:for="{{orders}}"
+      wx:key="id"
+      order="{{item}}"
+      bind:open="openOrder"
+    />
+    <view wx:if="{{loadingMore}}" class="muted center">加载中…</view>
+    <view wx:elif="{{reachedEnd}}" class="muted center">没有更多了</view>
+  </view>
+</view>

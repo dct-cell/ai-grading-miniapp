@@ -1,0 +1,59 @@
+<navigation-bar title="赛制与说明" back="{{true}}" />
+<view class="page page--with-action options-page">
+  <step-header current="{{2}}" />
+
+  <view class="files-brief list-surface">
+    <view class="files-brief__row">
+      <image src="/assets/icons/pdf.png" mode="aspectFit" />
+      <view class="files-brief__copy">
+        <view class="files-brief__name">{{sourceName}}</view>
+        <view class="muted">{{sourceSizeText}} · 答卷</view>
+      </view>
+    </view>
+    <view wx:if="{{referenceName}}" class="files-brief__row">
+      <image src="/assets/icons/pdf.png" mode="aspectFit" />
+      <view class="files-brief__copy">
+        <view class="files-brief__name">{{referenceName}}</view>
+        <view class="muted">参考文件 · 不计价</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section-title">选择批改方式</view>
+  <standard-selector options="{{serviceTiers}}" value="{{serviceTier}}" disabled="{{uploading}}" bind:change="chooseServiceTier" />
+
+  <view class="section-title standard-heading">选择评分标准</view>
+  <standard-selector options="{{standards}}" value="{{standard}}" disabled="{{uploading}}" bind:change="chooseStandard" />
+
+  <view class="section-title note-heading">
+    <text>补充说明</text>
+    <text class="section-title__optional">可选</text>
+  </view>
+  <view class="note-wrap {{noteFocused ? 'note-wrap--focus' : ''}} {{noteError ? 'note-wrap--error' : ''}}">
+    <textarea
+      class="note"
+      value="{{note}}"
+      maxlength="{{maxNoteChars}}"
+      placeholder="例如：这是某竞赛第 3 题，请核对公开题面与评分标准。"
+      bindinput="onNoteInput"
+      bindfocus="onNoteFocus"
+      bindblur="onNoteBlur"
+      disabled="{{uploading}}"
+      adjust-position="{{true}}"
+      cursor-spacing="24"
+    />
+    <view class="note__count mono-number">{{noteLength}} / {{maxNoteChars}}</view>
+  </view>
+  <view wx:if="{{noteError}}" class="inline-error">{{noteError}}</view>
+
+  <view wx:if="{{uploading}}" class="upload-state surface">
+    <view class="upload-state__head">
+      <view>正在提交文件</view>
+      <view class="muted">{{hasReference ? '两份文件正在安全上传，请保持页面打开' : '页面将在上传后计算页数与价格'}}</view>
+    </view>
+    <view wx:if="{{!hasReference}}" class="upload-state__track"><view class="upload-state__bar" style="width:{{progress}}%" /></view>
+    <view wx:if="{{!hasReference}}" class="upload-state__pct mono-number">{{progress}}%</view>
+  </view>
+  <view wx:if="{{error}}" class="error-panel"><view class="error">{{error}}</view></view>
+</view>
+<sticky-action-bar primaryLabel="{{uploading ? '正在提交…' : '获取页数与报价'}}" disabled="{{!canSubmit}}" busy="{{uploading}}" bind:primary="submit" />

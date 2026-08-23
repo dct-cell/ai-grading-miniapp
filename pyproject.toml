@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "math-competition-grader"
+version = "3.0.0.dev0"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "fastapi>=0.116,<1",
+  "uvicorn[standard]>=0.35,<1",
+  "python-multipart>=0.0.20,<1",
+  "pydantic-settings>=2.10,<3",
+  "sqlalchemy>=2.0.41,<3",
+  "alembic>=1.16,<2",
+  "pymysql>=1.1,<2",
+  "cryptography>=45,<46",
+  "pypdf>=6,<7",
+  "PyMuPDF>=1.26,<2",
+  "httpx>=0.28,<1",
+  "jsonschema>=4.23,<5",
+  "argon2-cffi>=25,<26",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4,<9", "pytest-cov>=6.2,<7", "freezegun>=1.5,<2", "reportlab>=4.4,<5"]
+
+[tool.setuptools.packages.find]
+include = ["server*", "worker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

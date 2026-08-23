@@ -1,0 +1,27 @@
+# 本地 Python 环境
+.venv/
+
+# Python 与测试缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# setuptools 可编辑安装产物
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# 本地临时文件
+tmp/
+
+# 本地隔离工作树
+.worktrees/
+
+# 密钥和本地配置
+.env
+.env.*
+!.env.example
+
+# Superpowers visual brainstorming sessions
+.superpowers/

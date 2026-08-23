@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "任务记录",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "order-row": "../../components/order-row/index"
+  }
+}

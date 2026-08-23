@@ -1,0 +1,120 @@
+.options-page {
+  padding-top: 0;
+}
+
+.files-brief {
+  margin-bottom: 44rpx;
+}
+
+.files-brief__row {
+  min-height: 112rpx;
+  display: flex;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--line-soft);
+}
+
+.files-brief__row:last-child {
+  border-bottom: 0;
+}
+
+.files-brief__row image {
+  width: 56rpx;
+  height: 56rpx;
+  margin-right: 18rpx;
+}
+
+.files-brief__copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.files-brief__name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--type-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-heading {
+  margin-top: var(--space-section);
+  margin-bottom: 16rpx;
+}
+
+.standard-heading {
+  margin-top: var(--space-section);
+}
+
+.section-title__optional {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: 500;
+}
+
+.note-wrap {
+  padding: 22rpx var(--space-group) 16rpx;
+  border: 2rpx solid var(--line);
+  border-radius: var(--radius-group);
+  background: var(--surface);
+  transition: border-color var(--motion-fast) ease-out, box-shadow var(--motion-fast) ease-out;
+}
+
+.note-wrap--focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 6rpx rgba(40, 90, 74, 0.07);
+}
+
+.note-wrap--error {
+  border-color: var(--danger);
+}
+
+.note {
+  width: 100%;
+  min-height: 230rpx;
+  padding: 0;
+  background: transparent;
+  box-sizing: border-box;
+  font-size: var(--type-control);
+  line-height: 1.6;
+}
+
+.note__count {
+  text-align: right;
+  color: var(--muted);
+  font-size: var(--type-caption);
+  margin-top: 8rpx;
+}
+
+.upload-state {
+  margin-top: 30rpx;
+  padding: var(--space-group);
+}
+
+.upload-state__head {
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+
+.upload-state__track {
+  height: 8rpx;
+  margin-top: 20rpx;
+  overflow: hidden;
+  border-radius: 999rpx;
+  background: var(--line-soft);
+}
+
+.upload-state__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width var(--motion-fast) ease-out;
+}
+
+.upload-state__pct {
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: var(--type-caption);
+  text-align: right;
+}

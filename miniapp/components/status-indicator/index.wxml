@@ -1,0 +1,4 @@
+<view class="status status--{{tone}} {{compact ? 'status--compact' : ''}}">
+  <icon type="{{iconType}}" size="{{compact ? 15 : 18}}" color="{{iconColor}}" />
+  <text class="status__text">{{text}}</text>
+</view>

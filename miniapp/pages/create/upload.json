@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "上传答卷",
+  "usingComponents": {
+    "pdf-picker": "../../components/pdf-picker/index"
+  }
+}

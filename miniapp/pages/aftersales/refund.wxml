@@ -1,0 +1,48 @@
+<navigation-bar title="申请退款" back="{{true}}" />
+<view class="page page--with-action refund-page">
+  <!-- 提交成功后的结果界面：自动退款与等待审核两种 -->
+  <block wx:if="{{outcome}}">
+    <view class="outcome surface">
+      <view class="outcome__icon"><icon type="{{outcome.completed ? 'success' : 'waiting'}}" size="34" color="{{outcome.completed ? '#39755F' : '#A87832'}}" /></view>
+      <view class="outcome__title {{outcome.completed ? 'outcome__title--ok' : ''}}">
+        {{outcome.title}}
+      </view>
+      <view class="amount mono-number">{{amountText}}</view>
+      <view class="muted">{{outcome.detail}}</view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="refund-lead">
+      <view class="refund-lead__eyebrow">全额退款</view>
+      <view class="refund-lead__title">请确认退款影响</view>
+      <view class="muted">金额由服务端按实付记录确定，不可修改。退款成功后将无法继续下载批改报告。</view>
+    </view>
+
+    <view class="refund-amount surface">
+      <text>退款金额</text>
+      <text class="amount mono-number">{{amountText}}</text>
+    </view>
+
+    <view class="section-title">选择退款原因</view>
+    <view class="reason-list">
+      <view
+        wx:for="{{reasons}}"
+        wx:key="value"
+        class="option tap-feedback {{reason === item.value ? 'option--on' : ''}}"
+        hover-class="{{submitting ? 'none' : 'tap-feedback--active'}}"
+        hover-start-time="0"
+        hover-stay-time="100"
+        data-value="{{item.value}}"
+        bindtap="chooseReason"
+      >
+        <text>{{item.label}}</text>
+        <view class="option__mark">{{reason === item.value ? '✓' : ''}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{error}}" class="error-panel"><view class="error">{{error}}</view></view>
+  </block>
+</view>
+<sticky-action-bar wx:if="{{outcome}}" primaryLabel="查看订单" bind:primary="done" />
+<sticky-action-bar wx:else primaryLabel="{{submitting ? '提交中…' : '申请全额退款'}}" secondaryLabel="取消" disabled="{{!allowed || !reason}}" busy="{{submitting}}" danger="{{true}}" bind:primary="confirm" bind:secondary="cancel" />

@@ -1,0 +1,197 @@
+:root {
+  --colour-surface: #ffffff;
+  --colour-canvas: #f5f6f8;
+  --colour-ink: #1f2329;
+  --colour-ink-muted: #5b6472;
+  --colour-line: #dfe3e9;
+  --colour-accent: #1f5fbf;
+  --colour-danger: #b3261e;
+  --colour-warning: #8a5a00;
+  --colour-success: #1f6b3a;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius: 6px;
+  --font-body: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--colour-canvas);
+  color: var(--colour-ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+
+.shell__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-5);
+  background: var(--colour-surface);
+  border-bottom: 1px solid var(--colour-line);
+}
+
+.shell__brand {
+  font-weight: 600;
+}
+
+.shell__nav {
+  display: flex;
+  gap: var(--space-4);
+  flex: 1;
+}
+
+.shell__link {
+  color: var(--colour-ink-muted);
+  text-decoration: none;
+}
+
+.shell__link.active {
+  color: var(--colour-accent);
+  font-weight: 600;
+}
+
+.shell__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--colour-ink-muted);
+}
+
+.shell__main {
+  padding: var(--space-5);
+}
+
+.login {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 320px;
+  margin: 10vh auto;
+  padding: var(--space-5);
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+}
+
+.login input {
+  padding: var(--space-2);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+}
+
+.login button {
+  margin-top: var(--space-3);
+  padding: var(--space-2);
+  background: var(--colour-accent);
+  color: #fff;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+[role="alert"] {
+  color: var(--colour-danger);
+}
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.metric {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 128px;
+  padding: var(--space-3);
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+}
+
+.metric__label {
+  color: var(--colour-ink-muted);
+  font-size: 12px;
+}
+
+.metric__value {
+  font-size: 20px;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.filters input,
+.filters select {
+  padding: var(--space-2);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+}
+
+.filters input {
+  min-width: 280px;
+}
+
+.detail {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4);
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+}
+
+.detail dt {
+  color: var(--colour-ink-muted);
+}
+
+.detail dd {
+  margin: 0;
+}
+
+/* Anything that moves real money is visually separated from routine reads. */
+.danger-zone {
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  background: #fff7f6;
+  border: 1px solid var(--colour-danger);
+  border-radius: var(--radius);
+}
+
+.danger-zone h2 {
+  margin-top: 0;
+  color: var(--colour-danger);
+}
+
+.danger-zone input {
+  margin: 0 var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--colour-line);
+  border-radius: var(--radius);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--colour-surface);
+}
+
+th,
+td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--colour-line);
+  text-align: left;
+}

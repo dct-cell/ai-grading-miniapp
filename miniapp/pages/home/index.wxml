@@ -1,0 +1,102 @@
+<navigation-bar title="数学竞赛题批改" />
+
+<view class="page home">
+  <view class="intro">
+    <view class="intro__copy">
+      <view
+        class="intro__account tap-feedback"
+        hover-class="tap-feedback--active"
+        hover-start-time="0"
+        hover-stay-time="100"
+        bindtap="goAccount"
+        role="button"
+        aria-label="查看账户"
+      >
+        <text class="intro__account-text">{{accountText || '我'}}</text>
+      </view>
+      <view class="intro__title">欢迎回来</view>
+      <view class="intro__sub">提交答卷，查看报告</view>
+      <view class="intro__rule" />
+      <view class="intro__promise">逐页细看，评得有据</view>
+    </view>
+    <view class="intro__visual" aria-hidden="true">
+      <image class="intro__geometry" src="/assets/geometry-proof.png" mode="aspectFit" />
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="home-state">
+    <view class="skeleton skeleton--title" />
+    <view class="skeleton skeleton--panel" />
+  </view>
+  <view wx:elif="{{error}}" class="error-panel">
+    <view class="error">{{error}}</view>
+    <view class="btn btn--ghost tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="load">重新加载</view>
+  </view>
+
+  <block wx:else>
+    <block wx:if="{{!isNewUser}}">
+      <view wx:if="{{activeOrder}}" class="section-title">当前任务</view>
+      <view
+        wx:if="{{activeOrder}}"
+        class="current surface tap-feedback"
+        hover-class="tap-feedback--active"
+        hover-start-time="0"
+        hover-stay-time="100"
+        bindtap="openOrder"
+        data-id="{{activeOrder.id}}"
+      >
+        <view class="current__copy">
+          <status-indicator text="{{activeOrder.stateText}}" tone="{{activeOrder.tone}}" />
+          <view class="current__standard">{{activeOrder.standardText}}</view>
+          <view class="current__meta mono-number">{{activeOrder.page_count}} 页 · {{activeOrder.amountText}}</view>
+          <view wx:if="{{activeOrder.etaText}}" class="current__eta">{{activeOrder.etaText}}</view>
+        </view>
+        <image class="current__geometry" src="/assets/geometry-proof.png" mode="aspectFit" />
+      </view>
+
+      <view class="section-title">
+        <text>最近报告</text>
+        <view class="section-title__action tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="goOrders">全部任务</view>
+      </view>
+      <view
+        wx:if="{{recentDelivered}}"
+        class="recent list-surface tap-feedback"
+        hover-class="tap-feedback--active"
+        hover-start-time="0"
+        hover-stay-time="100"
+        bindtap="openOrder"
+        data-id="{{recentDelivered.id}}"
+      >
+        <view>
+          <view class="recent__title">{{recentDelivered.standardText}}</view>
+          <view class="muted">{{recentDelivered.page_count}} 页 · {{recentDelivered.createdText || '批改报告'}}</view>
+        </view>
+        <view class="recent__status">
+          <status-indicator text="{{recentDelivered.stateText}}" tone="{{recentDelivered.tone}}" compact="{{true}}" />
+        </view>
+      </view>
+      <view wx:else class="empty-inline list-surface">暂无可查看的报告</view>
+    </block>
+
+    <view class="section-title">一份答卷，三步完成</view>
+    <view class="process list-surface">
+      <view class="process__item"><text class="process__no mono-number">01</text><view><view class="process__title">选择答卷</view><view class="muted">上传同时包含题目与作答的 PDF</view></view></view>
+      <view class="process__item"><text class="process__no mono-number">02</text><view><view class="process__title">确认评分标准</view><view class="muted">选择赛制，可附加参考文件与说明</view></view></view>
+      <view class="process__item"><text class="process__no mono-number">03</text><view><view class="process__title">查看批改报告</view><view class="muted">完成后打开逐页批注 PDF</view></view></view>
+    </view>
+    <view class="btn tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="goCreate">提交答卷</view>
+
+    <view class="section-title">支持赛制</view>
+    <view class="standard-strip list-surface">
+      <view wx:for="{{standards}}" wx:key="value" class="standard-strip__item">
+        <view class="standard-strip__label">{{item.label}}</view>
+        <view class="muted">{{item.hint}}</view>
+      </view>
+    </view>
+
+    <view class="service-note">
+      <view class="service-note__title">服务说明</view>
+      <view class="muted">结果交付后，可在订单显示的期限内验收、申请一次复核或申请全额退款。</view>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,57 @@
+.price {
+  margin-top: 28rpx;
+  padding: var(--space-group);
+  border-radius: var(--radius-group);
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 18rpx 42rpx rgba(40, 90, 74, 0.16);
+}
+
+.price__eyebrow {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: var(--type-caption);
+  letter-spacing: 0.12em;
+  margin-bottom: 18rpx;
+}
+
+.price__row,
+.price__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.price__row {
+  min-height: 58rpx;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: var(--type-body);
+}
+
+.price__divider {
+  height: 2rpx;
+  background: rgba(255, 255, 255, 0.17);
+  margin: 18rpx 0 24rpx;
+}
+
+.total__label {
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+
+.total__value {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #fff;
+}
+
+.price__hint,
+.price__expiry {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: var(--type-caption);
+  margin-top: 6rpx;
+}
+
+.price__expiry {
+  margin-top: 24rpx;
+}

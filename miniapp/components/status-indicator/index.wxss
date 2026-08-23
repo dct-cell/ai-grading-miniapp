@@ -1,0 +1,31 @@
+.status {
+  display: flex;
+  align-items: center;
+  min-height: 52rpx;
+  color: #737773;
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+
+.status__text {
+  margin-left: 10rpx;
+  line-height: 1.35;
+}
+
+.status--busy,
+.status--ready {
+  color: #39755f;
+}
+
+.status--warn {
+  color: #a87832;
+}
+
+.status--compact {
+  min-height: 40rpx;
+  font-size: var(--type-meta);
+}
+
+.status--compact .status__text {
+  margin-left: 7rpx;
+}

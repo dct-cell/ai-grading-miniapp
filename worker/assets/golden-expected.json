@@ -1,0 +1,28 @@
+{
+  "grading_standard": "imo",
+  "resolved_league_scope": null,
+  "title": "数学竞赛题批改（金标准）",
+  "total_score": 0,
+  "max_score": 7,
+  "overall_summary": "Golden fixture used by `worker doctor --full` to validate the real runtime end-to-end. The expected fields mirror the result schema so a single jsonschema check covers both the manifest and grading payload.",
+  "problems": [
+    {
+      "label": "金标准题 1",
+      "score": 0,
+      "max_score": 7,
+      "summary": "PDF 渲染、字体加载、XeLaTeX 排版与 manifest 校验全部通过。"
+    }
+  ],
+  "pages": [
+    {
+      "page": 1,
+      "problem": "金标准 · 原稿第 1 页",
+      "score": 0,
+      "max_score": 7,
+      "page_summary": "本页用于验证原稿清晰度、中文字体与报告排版。",
+      "findings": []
+    }
+  ],
+  "expected_page_count": 2,
+  "expected_score_range": [0, 7]
+}

@@ -1,0 +1,84 @@
+<navigation-bar title="任务详情" back="{{true}}" />
+<view class="page {{bottomPrimaryLabel ? 'page--with-action' : ''}} detail-page">
+  <view wx:if="{{loading}}" class="detail-loading">
+    <view class="skeleton detail-loading__hero" />
+    <view class="skeleton detail-loading__row" />
+    <view class="skeleton detail-loading__row" />
+  </view>
+  <view wx:elif="{{!order}}" class="error-panel">
+    <view class="error">{{error}}</view>
+    <view class="btn btn--ghost tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="refresh">重试</view>
+  </view>
+
+  <block wx:else>
+    <view class="detail-hero">
+      <view class="detail-hero__eyebrow">当前状态</view>
+      <view class="detail-hero__head">
+        <view class="detail-hero__standard">{{order.standardText}}</view>
+        <status-indicator text="{{order.stateText}}" tone="{{order.tone}}" />
+      </view>
+      <view class="detail-hero__meta">
+        <text wx:if="{{order.etaText}}">{{order.etaText}}</text>
+        <text wx:if="{{deadlineText}}">处理期限·{{deadlineText}}</text>
+      </view>
+    </view>
+
+    <score-summary wx:if="{{summary}}" summary="{{summary}}" standardText="{{order.standardText}}" />
+
+    <view class="section-title">批改轮次</view>
+    <view class="timeline list-surface">
+      <view wx:for="{{rounds}}" wx:key="round_number" class="timeline__item">
+        <view class="timeline__rail">
+          <view class="timeline__dot" />
+          <view wx:if="{{index < rounds.length - 1}}" class="timeline__line" />
+        </view>
+        <view class="timeline__copy">
+          <view class="timeline__head">
+            <text>第 {{item.round_number}} 轮{{item.round_number === 2 ? '·复核' : ''}}</text>
+            <text class="timeline__state">{{item.stateText}}</text>
+          </view>
+          <view wx:if="{{item.deliveredText}}" class="muted">交付于 {{item.deliveredText}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section-title">任务信息</view>
+    <view class="detail-info list-surface">
+      <view class="detail-info__row"><text>批改方式</text><text>{{order.serviceTierText}}</text></view>
+      <view class="detail-info__row"><text>答卷页数</text><text class="mono-number">{{order.page_count}} 页</text></view>
+      <view class="detail-info__row"><text>已支付</text><text class="mono-number">{{order.amountText}}</text></view>
+      <view class="detail-info__row"><text>创建时间</text><text class="mono-number">{{order.createdText}}</text></view>
+      <view wx:if="{{order.note}}" class="detail-note"><view class="detail-note__label">补充说明</view><view>{{order.note}}</view></view>
+      <view wx:if="{{order.appeal_text}}" class="detail-note"><view class="detail-note__label">复核诉求</view><view>{{order.appeal_text}}</view></view>
+    </view>
+
+    <view wx:if="{{downloadableRounds.length > 1 || showHistoryDownloads}}" class="section-title">历史报告</view>
+    <view wx:if="{{downloadableRounds.length > 1 || showHistoryDownloads}}" class="downloads list-surface">
+      <view
+        wx:for="{{downloadableRounds}}"
+        wx:key="round_number"
+        class="downloads__row tap-feedback"
+        hover-class="tap-feedback--active"
+        hover-start-time="0"
+        hover-stay-time="100"
+        data-round="{{item.round_number}}"
+        bindtap="downloadResult"
+      >
+        <image src="/assets/icons/download.png" mode="aspectFit" />
+        <text>打开第 {{item.round_number}} 轮报告</text>
+      </view>
+    </view>
+
+    <view wx:if="{{error}}" class="error-panel"><view class="error">{{error}}</view></view>
+  </block>
+</view>
+<sticky-action-bar
+  wx:if="{{bottomPrimaryLabel}}"
+  primaryLabel="{{downloading ? '正在打开报告…' : bottomPrimaryLabel}}"
+  secondaryLabel="{{bottomSecondaryLabel}}"
+  disabled="{{actionBusy}}"
+  busy="{{downloading || actionBusy}}"
+  danger="{{bottomPrimaryKind === 'refund'}}"
+  bind:primary="bottomPrimary"
+  bind:secondary="bottomSecondary"
+/>

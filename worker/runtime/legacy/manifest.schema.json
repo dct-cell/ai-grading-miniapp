@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "output_pdf": {
+      "type": "string",
+      "enum": ["output/report.pdf", "output/annotated.pdf"]
+    },
+    "page_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "service_tier": {
+      "type": "string",
+      "enum": ["summary_report", "annotated_review"]
+    },
+    "score": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_score": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "grading_standard": {
+      "type": "string",
+      "enum": ["league_second_round", "cmo", "imo"]
+    },
+    "resolved_league_scope": {
+      "type": ["string", "null"],
+      "enum": ["full_paper", "problem_set", null]
+    }
+  },
+  "required": [
+    "output_pdf",
+    "page_count",
+    "summary",
+    "service_tier",
+    "score",
+    "max_score",
+    "grading_standard",
+    "resolved_league_scope"
+  ],
+  "additionalProperties": false
+}

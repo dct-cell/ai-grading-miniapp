@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://math-competition-grader/schemas/summary-grading.json",
+  "type": "object",
+  "properties": {
+    "service_tier": {"const": "summary_report"},
+    "grading_standard": {
+      "type": "string",
+      "enum": ["league_second_round", "cmo", "imo"]
+    },
+    "resolved_league_scope": {
+      "type": ["string", "null"],
+      "enum": ["full_paper", "problem_set", null]
+    },
+    "title": {"type": "string", "minLength": 1},
+    "total_score": {"type": "integer", "minimum": 0},
+    "max_score": {"type": "integer", "minimum": 0},
+    "problems": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {"type": "string", "minLength": 1},
+          "score": {"type": "integer", "minimum": 0},
+          "max_score": {"type": "integer", "minimum": 0},
+          "verdict": {"type": "string", "minLength": 1},
+          "issues": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+                "deduction": {"type": "integer", "minimum": 0}
+              },
+              "required": ["title", "reason", "deduction"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "label", "score", "max_score", "verdict", "issues"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "service_tier", "grading_standard", "resolved_league_scope", "title",
+    "total_score", "max_score", "problems"
+  ],
+  "additionalProperties": false
+}

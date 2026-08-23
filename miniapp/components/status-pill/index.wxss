@@ -1,0 +1,27 @@
+.pill {
+  font-size: 24rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  background: #f0f1f3;
+  color: #6b7280;
+}
+
+.pill--busy {
+  background: #eaf1fd;
+  color: #1f6feb;
+}
+
+.pill--ready {
+  background: #e8f5ec;
+  color: #1a7f37;
+}
+
+.pill--warn {
+  background: #fdf3e3;
+  color: #9a6700;
+}
+
+.pill--done {
+  background: #f0f1f3;
+  color: #6b7280;
+}

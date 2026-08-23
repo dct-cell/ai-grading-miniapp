@@ -1,0 +1,52 @@
+.payment-page {
+  padding-top: 0;
+}
+
+.payment-lead {
+  margin-bottom: 40rpx;
+}
+
+.payment-lead__title {
+  margin-bottom: 8rpx;
+  font-size: var(--type-page);
+  font-weight: 700;
+}
+
+.confirm-list__row {
+  min-height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30rpx;
+  border-bottom: 1rpx solid var(--line-soft);
+}
+
+.confirm-list__row:last-child {
+  border-bottom: 0;
+}
+
+.confirm-list__label {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--type-meta);
+}
+
+.confirm-list__value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--type-body);
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payment-note {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 20rpx;
+  color: var(--muted);
+  font-size: var(--type-caption);
+}

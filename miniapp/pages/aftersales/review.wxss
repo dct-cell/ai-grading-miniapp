@@ -1,0 +1,89 @@
+.review-page {
+  padding-top: var(--space-screen-top);
+}
+
+.review-lead {
+  margin-bottom: 30rpx;
+}
+
+.review-lead__eyebrow {
+  color: var(--brand);
+  font-size: var(--type-caption);
+  font-weight: 650;
+  letter-spacing: 0.1em;
+}
+
+.review-lead__title {
+  margin: 12rpx 0;
+  font-size: var(--type-page);
+  font-weight: 700;
+  line-height: 1.38;
+}
+
+.review-order {
+  display: flex;
+  align-items: center;
+  padding: var(--space-group);
+}
+
+.review-order__mark {
+  width: 58rpx;
+  height: 58rpx;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 18rpx;
+  border-radius: 50%;
+  background: var(--brand-soft);
+}
+
+.review-order__copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-order__title {
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+
+.review-order__deadline {
+  margin-top: 6rpx;
+  color: var(--waiting);
+  font-size: var(--type-meta);
+}
+
+.note-wrap {
+  padding: 22rpx var(--space-group) 16rpx;
+  border: 2rpx solid var(--line);
+  border-radius: var(--radius-group);
+  background: var(--surface);
+  transition: border-color var(--motion-fast) ease-out, box-shadow var(--motion-fast) ease-out;
+}
+
+.note-wrap--focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 6rpx rgba(40, 90, 74, 0.07);
+}
+
+.note-wrap--error {
+  border-color: var(--danger);
+}
+
+.note {
+  width: 100%;
+  min-height: 280rpx;
+  padding: 0;
+  background: transparent;
+  box-sizing: border-box;
+  font-size: var(--type-control);
+  line-height: 1.6;
+}
+
+.note__count {
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: var(--type-caption);
+  text-align: right;
+}

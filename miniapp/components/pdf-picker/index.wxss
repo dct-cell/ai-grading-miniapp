@@ -1,0 +1,136 @@
+.picker {
+  margin-top: 18rpx;
+}
+
+.picker__empty {
+  min-height: 144rpx;
+  border: 2rpx dashed var(--sage);
+  border-radius: var(--radius-group);
+  padding: var(--space-group);
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  background: rgba(255, 253, 252, 0.74);
+}
+
+.picker__empty--off {
+  opacity: 0.5;
+}
+
+.picker__file {
+  display: flex;
+  align-items: center;
+  min-height: 132rpx;
+  background: var(--surface);
+  border: 2rpx solid var(--line-soft);
+  border-radius: var(--radius-group);
+  padding: var(--space-group);
+  box-sizing: border-box;
+  box-shadow: 0 12rpx 30rpx rgba(32, 35, 32, 0.045);
+}
+
+.picker__file--off {
+  opacity: 0.72;
+}
+
+.picker__icon {
+  width: 64rpx;
+  height: 64rpx;
+  flex: none;
+  margin-right: 20rpx;
+}
+
+.picker__empty-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.picker__title {
+  color: var(--text);
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+
+.picker__hint,
+.picker__size {
+  color: var(--muted);
+  font-size: var(--type-meta);
+}
+
+.picker__choose {
+  color: var(--brand);
+  font-size: var(--type-meta);
+  font-weight: 600;
+  margin-left: 16rpx;
+}
+
+.picker__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker__name {
+  color: var(--text);
+  font-size: var(--type-control);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__size {
+  margin-top: 8rpx;
+}
+
+.picker__clear {
+  width: 72rpx;
+  height: 72rpx;
+  margin-left: 12rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.picker__clear image {
+  width: 34rpx;
+  height: 34rpx;
+}
+
+.picker__progress {
+  margin-top: 18rpx;
+}
+
+.picker__track {
+  height: 8rpx;
+  background: var(--line-soft);
+  border-radius: 999rpx;
+  overflow: hidden;
+}
+
+.picker__bar {
+  height: 100%;
+  background: var(--brand);
+  border-radius: inherit;
+  transition: width var(--motion-fast) ease-out;
+}
+
+.picker__progress-copy {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12rpx;
+  color: var(--muted);
+  font-size: var(--type-meta);
+}
+
+.picker__empty.tap-feedback--active {
+  transform: scale(0.985);
+}
+
+.picker--error .picker__empty,
+.picker--error .picker__file {
+  border-color: var(--danger);
+}

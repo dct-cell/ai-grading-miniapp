@@ -1,0 +1,20 @@
+<view class="price">
+  <view class="price__eyebrow">费用明细</view>
+  <view class="price__row">
+    <text>答卷页数</text>
+    <text class="mono-number">{{pageCount}} 页</text>
+  </view>
+  <view class="price__row">
+    <text>每页服务费</text>
+    <text class="mono-number">{{unitPriceText}} / 页</text>
+  </view>
+  <view class="price__divider" />
+  <view class="price__total">
+    <view>
+      <view class="total__label">需支付</view>
+      <view class="price__hint">参考文件不计费</view>
+    </view>
+    <text class="total__value mono-number">{{totalText}}</text>
+  </view>
+  <view wx:if="{{expiresInText}}" class="price__expiry">{{expiresInText}}</view>
+</view>

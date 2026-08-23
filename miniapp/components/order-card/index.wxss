@@ -1,0 +1,40 @@
+.card {
+  background: #fffdfc;
+  border: 1rpx solid rgba(216, 211, 202, 0.82);
+  border-radius: 24rpx;
+  padding: 28rpx;
+  margin-bottom: 20rpx;
+  transition: transform 160ms ease-out;
+}
+
+.card.tap-feedback--active {
+  transform: scale(0.985);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.head__standard {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8rpx 0;
+}
+
+.row__label {
+  color: #6b7280;
+}
+
+.muted {
+  color: #6b7280;
+  font-size: 24rpx;
+  margin-top: 6rpx;
+}

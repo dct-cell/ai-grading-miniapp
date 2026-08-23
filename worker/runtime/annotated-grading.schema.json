@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://math-competition-grader/schemas/annotated-grading.json",
+  "type": "object",
+  "properties": {
+    "service_tier": {"const": "annotated_review"},
+    "grading_standard": {
+      "type": "string",
+      "enum": ["league_second_round", "cmo", "imo"]
+    },
+    "resolved_league_scope": {
+      "type": ["string", "null"],
+      "enum": ["full_paper", "problem_set", null]
+    },
+    "title": {"type": "string", "minLength": 1},
+    "total_score": {"type": "integer", "minimum": 0},
+    "max_score": {"type": "integer", "minimum": 0},
+    "overall_summary": {"type": "string", "minLength": 1},
+    "problems": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {"type": "string", "minLength": 1},
+          "score": {"type": "integer", "minimum": 0},
+          "max_score": {"type": "integer", "minimum": 0},
+          "summary": {"type": "string"}
+        },
+        "required": ["label", "score", "max_score", "summary"],
+        "additionalProperties": false
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "page": {"type": "integer", "minimum": 1},
+          "problem": {"type": "string"},
+          "score": {"type": "integer", "minimum": 0},
+          "max_score": {"type": "integer", "minimum": 0},
+          "page_summary": {"type": "string"},
+          "verdict": {"type": "string"},
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "integer", "minimum": 1},
+                "kind": {
+                  "type": "string",
+                  "enum": ["correct", "informational", "warning", "error"]
+                },
+                "title": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+                "suggestion": {"type": "string"},
+                "deduction": {"type": "integer", "minimum": 0},
+                "source_quote": {"type": "string"},
+                "formula": {"type": "string"},
+                "bbox": {
+                  "type": "array", "minItems": 4, "maxItems": 4,
+                  "items": {"type": "number", "minimum": 0, "maximum": 1}
+                },
+                "bboxes": {
+                  "type": "array", "minItems": 1,
+                  "items": {
+                    "type": "array", "minItems": 4, "maxItems": 4,
+                    "items": {"type": "number", "minimum": 0, "maximum": 1}
+                  }
+                }
+              },
+              "required": ["id", "kind", "title", "reason", "deduction"],
+              "anyOf": [
+                {"required": ["source_quote"]},
+                {"required": ["bbox"]},
+                {"required": ["bboxes"]}
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "page", "problem", "score", "max_score", "page_summary", "findings"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "service_tier", "grading_standard", "resolved_league_scope", "title",
+    "total_score", "max_score", "overall_summary", "problems", "pages"
+  ],
+  "additionalProperties": false
+}

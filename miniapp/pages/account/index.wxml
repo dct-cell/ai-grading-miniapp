@@ -1,0 +1,30 @@
+<navigation-bar title="我的" back="{{true}}" />
+<view class="page account-page">
+  <view class="profile">
+    <view class="profile__avatar">{{avatarText}}</view>
+    <view>
+      <view class="profile__title">我的批改档案</view>
+      <view class="profile__id mono-number">{{publicId || '—'}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{error}}" class="error-panel"><view class="error">{{error}}</view></view>
+
+  <view class="section-title">账户</view>
+  <view class="settings list-surface">
+    <view class="settings__row tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="goOrders">
+      <view>
+        <view class="settings__label">任务记录</view>
+        <view class="muted">查看批改进度、报告与售后状态</view>
+      </view>
+      <image src="/assets/icons/chevron.png" mode="aspectFit" />
+    </view>
+  </view>
+
+  <view class="account-note">
+    <view class="account-note__title">数据与隐私</view>
+    <view class="muted">答卷与报告仅对当前账户可见，具体保存与处理规则以服务说明为准。</view>
+  </view>
+
+  <view class="logout tap-feedback" hover-class="tap-feedback--active" hover-start-time="0" hover-stay-time="100" bindtap="confirmLogout">退出登录</view>
+</view>

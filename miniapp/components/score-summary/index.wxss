@@ -1,0 +1,81 @@
+.score-card {
+  padding: var(--space-group);
+  background: #fffdfc;
+  border: 1rpx solid rgba(216, 211, 202, 0.82);
+  border-radius: var(--radius-group);
+  box-shadow: 0 12rpx 30rpx rgba(32, 35, 32, 0.045);
+}
+
+.score-card__eyebrow {
+  color: #737773;
+  font-size: var(--type-caption);
+  font-weight: 600;
+}
+
+.score-card__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 10rpx;
+}
+
+.score-card__score {
+  color: #285a4a;
+  line-height: 1;
+}
+
+.score-card__value {
+  font-size: 64rpx;
+  font-weight: 700;
+  letter-spacing: -2rpx;
+}
+
+.score-card__max {
+  color: #737773;
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+
+.score-card__standard {
+  max-width: 46%;
+  color: #202320;
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  text-align: right;
+}
+
+.score-card__summary {
+  margin-top: 24rpx;
+  padding-top: 22rpx;
+  border-top: 1rpx solid #e8e4dc;
+  color: #555b57;
+  font-size: var(--type-body);
+  line-height: 1.6;
+}
+
+.score-card__problems {
+  margin-top: 24rpx;
+  border-top: 1rpx solid #e8e4dc;
+}
+
+.score-card__problem {
+  min-height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1rpx solid #e8e4dc;
+  font-size: var(--type-body);
+}
+
+.score-card__problem:last-child {
+  border-bottom: 0;
+}
+
+.score-card__problem-label {
+  color: #737773;
+}
+
+.score-card__problem-score {
+  color: #285a4a;
+  font-weight: 600;
+}

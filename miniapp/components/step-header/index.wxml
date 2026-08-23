@@ -1,0 +1,9 @@
+<view class="steps" aria-label="提交进度">
+  <block wx:for="{{steps}}" wx:key="*this">
+    <view class="steps__item {{current === index + 1 ? 'steps__item--current' : ''}} {{current > index + 1 ? 'steps__item--done' : ''}}">
+      <view class="steps__number">{{index + 1}}</view>
+      <view class="steps__label">{{item}}</view>
+    </view>
+    <view wx:if="{{index < steps.length - 1}}" class="steps__line {{current > index + 1 ? 'steps__line--done' : ''}}" />
+  </block>
+</view>

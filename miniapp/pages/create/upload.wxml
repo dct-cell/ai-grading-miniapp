@@ -1,0 +1,36 @@
+<navigation-bar title="提交答卷" />
+<view class="page page--with-action create-page">
+  <step-header current="{{1}}" />
+
+  <view class="create-lead">
+    <view class="create-lead__title">选择要批改的文件</view>
+    <view class="muted">答卷需同时包含题目与学生作答，支持单个 PDF。</view>
+  </view>
+
+  <view class="file-section">
+    <view class="file-section__head"><text>答卷 PDF</text><text class="required">必选</text></view>
+    <view class="muted">按答卷实际页数计价</view>
+    <pdf-picker
+      file="{{sourcePdf}}"
+      sizeText="{{sourceSizeText}}"
+      placeholder="选择答卷 PDF"
+      bind:choose="chooseSource"
+      bind:clear="clearSource"
+    />
+  </view>
+
+  <view class="file-section file-section--secondary">
+    <view class="file-section__head"><text>参考文件</text><text class="optional">可选</text></view>
+    <view class="muted">可上传参考答案或评分细则，不计入页数</view>
+    <pdf-picker
+      file="{{referencePdf}}"
+      sizeText="{{referenceSizeText}}"
+      placeholder="选择参考 PDF"
+      bind:choose="chooseReference"
+      bind:clear="clearReference"
+    />
+  </view>
+
+  <view wx:if="{{error}}" class="error-panel"><view class="error">{{error}}</view></view>
+</view>
+<sticky-action-bar primaryLabel="下一步·赛制与说明" disabled="{{!canContinue}}" bind:primary="goOptions" />

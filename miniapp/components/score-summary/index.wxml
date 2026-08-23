@@ -1,0 +1,17 @@
+<view wx:if="{{summary}}" class="score-card">
+  <view class="score-card__eyebrow">批改结果</view>
+  <view class="score-card__top">
+    <view class="score-card__score mono-number">
+      <text class="score-card__value">{{summary.totalScore !== null ? summary.totalScore : '—'}}</text>
+      <text wx:if="{{summary.maxScore !== null}}" class="score-card__max"> / {{summary.maxScore}}</text>
+    </view>
+    <view class="score-card__standard">{{standardText}}</view>
+  </view>
+  <view wx:if="{{summary.overallSummary}}" class="score-card__summary">{{summary.overallSummary}}</view>
+  <view wx:if="{{summary.problems.length}}" class="score-card__problems">
+    <view wx:for="{{summary.problems}}" wx:key="label" class="score-card__problem">
+      <text class="score-card__problem-label">{{item.labelText || item.label}}</text>
+      <text class="score-card__problem-score mono-number">{{item.score}}{{item.maxScore !== null ? ' / ' + item.maxScore : ''}}</text>
+    </view>
+  </view>
+</view>

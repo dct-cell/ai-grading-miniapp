@@ -1,0 +1,38 @@
+<navigation-bar title="申请复核" back="{{true}}" />
+<view class="page page--with-action review-page">
+  <view class="review-lead">
+    <view class="review-lead__eyebrow">一次复核机会</view>
+    <view class="review-lead__title">请指出需要重新核对的地方</view>
+    <view class="muted">复核使用原答卷，无需也不能替换文件。</view>
+  </view>
+
+  <view wx:if="{{order}}" class="review-order surface">
+    <view class="review-order__mark"><icon type="success" size="20" color="#285A4A" /></view>
+    <view class="review-order__copy">
+      <view class="review-order__title">{{standardText}}</view>
+      <view class="muted">{{order.page_count}} 页 · 原文件已锁定</view>
+      <view wx:if="{{deadlineText}}" class="review-order__deadline">{{deadlineText}}</view>
+    </view>
+  </view>
+
+  <view class="section-title">复核说明</view>
+  <view class="note-wrap {{focused ? 'note-wrap--focus' : ''}} {{textError ? 'note-wrap--error' : ''}}">
+    <textarea
+      class="note"
+      value="{{text}}"
+      maxlength="{{maxChars}}"
+      placeholder="请具体说明哪一题、哪一步的评分需要复核，例如：第二题第三步的构造被判为不严谨，但该构造在教材中有依据。"
+      bindinput="onTextInput"
+      bindfocus="onFocus"
+      bindblur="onBlur"
+      disabled="{{submitting || !allowed}}"
+      adjust-position="{{true}}"
+      cursor-spacing="24"
+    />
+    <view class="note__count mono-number">{{textLength}} / {{maxChars}}</view>
+  </view>
+  <view wx:if="{{textError}}" class="inline-error">{{textError}}</view>
+
+  <view wx:if="{{error}}" class="error-panel"><view class="error">{{error}}</view></view>
+</view>
+<sticky-action-bar primaryLabel="{{submitting ? '提交中…' : '提交复核申请'}}" secondaryLabel="取消" disabled="{{!canSubmit}}" busy="{{submitting}}" bind:primary="submit" bind:secondary="cancel" />

@@ -1,0 +1,31 @@
+<view class="nav-shell" style="height:{{totalHeight}}px">
+  <view
+    class="nav"
+    style="padding-top:{{statusBarHeight}}px;height:{{totalHeight}}px;padding-right:{{actionRight}}px"
+  >
+    <view
+      wx:if="{{back}}"
+      class="nav__back tap-feedback"
+      hover-class="tap-feedback--active"
+      hover-start-time="0"
+      hover-stay-time="100"
+      bindtap="goBack"
+      aria-label="返回"
+    >
+      <image class="nav__icon" src="/assets/icons/back.png" mode="aspectFit" />
+    </view>
+    <view class="nav__title {{back ? 'nav__title--back' : ''}}">{{title}}</view>
+    <view
+      wx:if="{{showAccount}}"
+      class="nav__account tap-feedback"
+      hover-class="tap-feedback--active"
+      hover-start-time="0"
+      hover-stay-time="100"
+      bindtap="openAccount"
+      aria-label="账户"
+    >
+      <text wx:if="{{accountText}}" class="nav__account-text">{{accountText}}</text>
+      <image wx:else class="nav__user" src="/assets/icons/user.png" mode="aspectFit" />
+    </view>
+  </view>
+</view>

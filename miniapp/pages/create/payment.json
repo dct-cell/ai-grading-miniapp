@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "确认支付",
+  "usingComponents": {
+    "price-summary": "../../components/price-summary/index"
+  }
+}

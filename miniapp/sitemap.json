@@ -1,0 +1,25 @@
+{
+  "desc": "关于本文件的更多信息，请参考微信官方文档中的sitemap 配置。",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "pages/orders/detail"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/aftersales/review"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/aftersales/refund"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/account/index"
+    },
+    {
+      "action": "allow",
+      "page": "*"
+    }
+  ]
+}

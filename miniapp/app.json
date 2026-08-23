@@ -1,0 +1,58 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/create/upload",
+    "pages/create/options",
+    "pages/create/payment",
+    "pages/orders/index",
+    "pages/orders/detail",
+    "pages/aftersales/review",
+    "pages/aftersales/refund",
+    "pages/account/index"
+  ],
+  "window": {
+    "navigationStyle": "custom",
+    "navigationBarTitleText": "数学竞赛题批改",
+    "navigationBarBackgroundColor": "#F6F4EF",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F6F4EF",
+    "backgroundTextStyle": "dark",
+    "enablePullDownRefresh": false
+  },
+  "usingComponents": {
+    "navigation-bar": "components/navigation-bar/index",
+    "step-header": "components/step-header/index",
+    "standard-selector": "components/standard-selector/index",
+    "status-indicator": "components/status-indicator/index",
+    "score-summary": "components/score-summary/index",
+    "sticky-action-bar": "components/sticky-action-bar/index"
+  },
+  "tabBar": {
+    "color": "#737773",
+    "selectedColor": "#285A4A",
+    "backgroundColor": "#FFFDFC",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "assets/tabbar/home.png",
+        "selectedIconPath": "assets/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/create/upload",
+        "text": "提交",
+        "iconPath": "assets/tabbar/submit.png",
+        "selectedIconPath": "assets/tabbar/submit-active.png"
+      },
+      {
+        "pagePath": "pages/orders/index",
+        "text": "任务",
+        "iconPath": "assets/tabbar/tasks.png",
+        "selectedIconPath": "assets/tabbar/tasks-active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

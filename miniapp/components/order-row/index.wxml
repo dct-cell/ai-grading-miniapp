@@ -1,0 +1,28 @@
+<view
+  class="order-row tap-feedback"
+  hover-class="tap-feedback--active"
+  hover-start-time="0"
+  hover-stay-time="100"
+  bindtap="open"
+  role="button"
+  aria-label="{{order.standardText}}·{{order.stateText}}"
+>
+  <view class="order-row__mark"><view class="order-row__mark-inner" /></view>
+  <view class="order-row__main">
+    <view class="order-row__head">
+      <view class="order-row__title">{{order.standardText}}</view>
+      <status-indicator text="{{order.stateText}}" tone="{{order.tone}}" compact="{{true}}" />
+    </view>
+    <view class="order-row__meta mono-number">
+      <text>{{order.serviceTierText}}</text>
+      <text>·</text>
+      <text>{{order.page_count}} 页</text>
+      <text>·</text>
+      <text>{{order.amountText}}</text>
+      <text>·</text>
+      <text>{{order.createdText}}</text>
+    </view>
+    <view wx:if="{{order.etaText}}" class="order-row__eta">{{order.etaText}}</view>
+  </view>
+  <image class="order-row__chevron" src="/assets/icons/chevron.png" mode="aspectFit" />
+</view>

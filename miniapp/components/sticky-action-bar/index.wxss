@@ -1,0 +1,57 @@
+.action-bar {
+  position: fixed;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 18rpx 32rpx calc(18rpx + env(safe-area-inset-bottom));
+  background: rgba(246, 244, 239, 0.96);
+  border-top: 1rpx solid rgba(216, 211, 202, 0.72);
+  box-sizing: border-box;
+}
+
+.action-bar__inner {
+  display: flex;
+  gap: 16rpx;
+}
+
+.action-bar__button {
+  min-height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  padding: 18rpx 24rpx;
+  box-sizing: border-box;
+  font-size: var(--type-control);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.action-bar__button--primary {
+  flex: 1.45;
+  background: #285a4a;
+  color: #fffdfc;
+  box-shadow: 0 10rpx 24rpx rgba(40, 90, 74, 0.16);
+}
+
+.action-bar__button--secondary {
+  flex: 1;
+  color: #285a4a;
+  background: #fffdfc;
+  border: 1rpx solid rgba(40, 90, 74, 0.38);
+}
+
+.action-bar__button--danger {
+  background: #b55e50;
+}
+
+.action-bar__button--disabled {
+  opacity: 0.42;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+.action-bar__button.tap-feedback--active {
+  transform: scale(0.98);
+}

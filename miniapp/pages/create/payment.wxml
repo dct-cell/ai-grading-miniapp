@@ -1,0 +1,46 @@
+<navigation-bar title="确认支付" back="{{true}}" />
+<view class="page page--with-action payment-page">
+  <step-header current="{{3}}" />
+
+  <view class="payment-lead">
+    <view class="payment-lead__title">确认本次批改</view>
+    <view class="muted">页数、单价与合计均来自服务端报价</view>
+  </view>
+
+  <view class="confirm-list list-surface">
+    <view class="confirm-list__row">
+      <text class="confirm-list__label">答卷</text>
+      <text class="confirm-list__value">{{sourceName}}</text>
+    </view>
+    <view class="confirm-list__row">
+      <text class="confirm-list__label">参考文件</text>
+      <text class="confirm-list__value">{{referenceName || '未上传'}}</text>
+    </view>
+    <view class="confirm-list__row">
+      <text class="confirm-list__label">评分标准</text>
+      <text class="confirm-list__value">{{standardText}}</text>
+    </view>
+    <view class="confirm-list__row">
+      <text class="confirm-list__label">批改方式</text>
+      <text class="confirm-list__value">{{serviceTierText}}</text>
+    </view>
+    <view class="confirm-list__row">
+      <text class="confirm-list__label">交付内容</text>
+      <text class="confirm-list__value">{{deliveryText}}</text>
+    </view>
+  </view>
+
+  <price-summary
+    pageCount="{{quote.page_count}}"
+    unitPriceText="{{unitPriceText}}"
+    totalText="{{totalText}}"
+    expiresInText="{{expiresInText}}"
+  />
+
+  <view wx:if="{{simulated}}" class="payment-note">
+    <icon type="info" size="16" color="#737773" />
+    <text>当前为演示支付，不产生实际扣款</text>
+  </view>
+  <view wx:if="{{error}}" class="error-panel"><view class="error">{{error}}</view></view>
+</view>
+<sticky-action-bar primaryLabel="{{paying ? '支付确认中…' : '确认支付 ' + totalText}}" secondaryLabel="重新上传" busy="{{paying}}" bind:primary="pay" bind:secondary="reupload" />
