@@ -11,51 +11,6 @@ from worker.runtime.testsupport import build_minimal_pdf
 __all__ = ["FakeGrader"]
 
 
-_PAGE_WIDTH = 595
-_PAGE_HEIGHT = 842
-
-
-def _build_pdf(page_count: int) -> bytes:
-    """Emit a real, xref-complete PDF.
-
-    pypdf (and therefore the server's inspect_pdf) rejects a PDF without a
-    cross-reference table, so the bytes are assembled properly rather than
-    hand-waved. The page count mirrors the grading contract: one annotated page
-    per input page plus a summary page.
-    """
-    objects: list[bytes] = []
-    page_object_numbers = [3 + index for index in range(page_count)]
-    kids = " ".join(f"{number} 0 R" for number in page_object_numbers)
-
-    objects.append(b"<</Type/Catalog/Pages 2 0 R>>")
-    objects.append(
-        f"<</Type/Pages/Kids[{kids}]/Count {page_count}>>".encode("ascii")
-    )
-    for _ in page_object_numbers:
-        objects.append(
-            f"<</Type/Page/Parent 2 0 R/MediaBox[0 0 {_PAGE_WIDTH} {_PAGE_HEIGHT}]>>".encode(
-                "ascii"
-            )
-        )
-
-    body = bytearray(b"%PDF-1.7\n")
-    offsets: list[int] = []
-    for index, payload in enumerate(objects, start=1):
-        offsets.append(len(body))
-        body += f"{index} 0 obj\n".encode("ascii") + payload + b"\nendobj\n"
-
-    xref_offset = len(body)
-    body += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
-    body += b"0000000000 65535 f \n"
-    for offset in offsets:
-        body += f"{offset:010d} 00000 n \n".encode("ascii")
-    body += (
-        f"trailer\n<</Size {len(objects) + 1}/Root 1 0 R>>\nstartxref\n"
-        f"{xref_offset}\n%%EOF\n"
-    ).encode("ascii")
-    return bytes(body)
-
-
 class FakeGrader:
     """Deterministic stand-in runtime used until Phase 04 lands.
 
@@ -147,7 +102,7 @@ class FakeGrader:
         json_path = workspace / "grading.json"
         json_path.write_bytes(json_bytes)
 
-        pdf_bytes = _build_pdf(output_page_count)
+        pdf_bytes = build_minimal_pdf(output_page_count)
         output_name = (
             "report.pdf" if bundle.service_tier == "summary_report" else "annotated.pdf"
         )

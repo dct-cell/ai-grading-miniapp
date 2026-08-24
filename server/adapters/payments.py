@@ -7,6 +7,7 @@ class PrepayRequest:
     merchant_order_id: str
     amount_cents: int
     description: str
+    payer_openid: str = ""
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,10 @@ class RefundFailed(Exception):
     reported through``RefundResult.succeeded``. Either way the caller must
     leave the refund retryable and must not mark the order refunded.
     """
+
+
+class PaymentGatewayUnavailable(RuntimeError):
+    """Prepay could not reach or authenticate with the provider."""
 
 
 class PaymentGateway(Protocol):

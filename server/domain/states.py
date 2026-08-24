@@ -66,6 +66,7 @@ JOB_TRANSITIONS: Final[Mapping[JobState, frozenset[JobState]]] = MappingProxyTyp
                 JobState.RUNNING,
                 JobState.QUEUED,
                 JobState.WORKER_EXCEPTION,
+                JobState.CANCELLED,
             }
         ),
         JobState.RUNNING: frozenset(
@@ -76,7 +77,7 @@ JOB_TRANSITIONS: Final[Mapping[JobState, frozenset[JobState]]] = MappingProxyTyp
             }
         ),
         JobState.UPLOADING: frozenset(
-            {JobState.SUCCEEDED, JobState.WORKER_EXCEPTION}
+            {JobState.SUCCEEDED, JobState.WORKER_EXCEPTION, JobState.CANCELLED}
         ),
     }
 )

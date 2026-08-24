@@ -121,6 +121,38 @@ def build_settings(tmp_path: Path, **overrides: object) -> ServerSettings:
         "summary_report_enabled": True,
     }
     values.update(overrides)
+    if values.get("environment") is Environment.PRODUCTION:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        private_path = tmp_path / "wechat-merchant-private.pem"
+        public_path = tmp_path / "wechat-platform-public.pem"
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        private_path.write_bytes(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+        public_path.write_bytes(
+            key.public_key().public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        )
+        values.update(
+            {
+                "wechat_app_id": "wx-test-app-id",
+                "wechat_app_secret": "x" * 32,
+                "wechat_pay_merchant_id": "1900000001",
+                "wechat_pay_certificate_serial": "TEST-MERCHANT-SERIAL",
+                "wechat_pay_private_key_path": private_path,
+                "wechat_pay_public_key_id": "TEST-WECHAT-PUBLIC-ID",
+                "wechat_pay_public_key_path": public_path,
+                "wechat_pay_api_v3_key": "v" * 32,
+            }
+        )
     return ServerSettings(**values)
 
 

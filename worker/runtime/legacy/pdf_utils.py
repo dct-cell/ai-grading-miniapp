@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,25 +41,3 @@ def inspect_pdf(path: Path, *, max_pages: int | None = None) -> PdfInfo:
     if max_pages is not None and page_count > max_pages:
         raise PdfValidationError(f"PDF 最多支持 {max_pages} 页。")
     return PdfInfo(page_count=page_count, size_bytes=size)
-
-
-def safe_original_filename(filename: str | None) -> str:
-    name = Path((filename or "submission.pdf").replace("\x00", "")).name.strip()
-    if not name:
-        name = "submission.pdf"
-    name = re.sub(r"[\\/:*?\"<>|\r\n\t]", "_", name)
-    if not name.lower().endswith(".pdf"):
-        raise PdfValidationError("仅支持上传 PDF 文件。")
-    return name[:180]
-
-
-def download_filename(
-    original_filename: str, grading_standard: str | None = None
-) -> str:
-    stem = Path(original_filename).stem or "批改结果"
-    label = {
-        "league_second_round": "联赛二试",
-        "cmo": "CMO",
-        "imo": "IMO",
-    }.get(grading_standard, "旧版")
-    return f"{stem}_逐页批改_{label}.pdf"

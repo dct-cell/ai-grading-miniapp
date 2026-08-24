@@ -191,12 +191,10 @@ class LegacyCodexRuntime:
         except CodexRunError as exc:
             raise self._map_error(exc, workspace) from exc
         except asyncio.CancelledError:
-            # Cancellation arrives when the daemon is shutting down or the
-            # lease expired; surface it as a stable code rather than letting
-            # the bare CancelledError escape.
-            raise RuntimeExecutionError(
-                "runtime_cancelled", legacy_code="asyncio_cancelled"
-            )
+            # Cancellation means drain, refund, or a lost lease.  Preserve
+            # asyncio's control-flow signal so the daemon never reports it as a
+            # second runtime failure.
+            raise
 
         # The runner writes a tier-specific PDF plus output/grading.json and
         # manifest.json. Promote the manifest-authorized PDF to the workspace

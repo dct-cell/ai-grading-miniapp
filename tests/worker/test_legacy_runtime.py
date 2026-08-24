@@ -449,7 +449,7 @@ class TestLegacyRuntimeErrorMapping:
         assert exc_info.value.legacy_code == "configuration_error"
 
     @pytest.mark.anyio
-    async def test_asyncio_cancelled_maps_to_runtime_cancelled(
+    async def test_asyncio_cancelled_preserves_control_flow(
         self, imo_workspace: Path, task_bundle: TaskBundle, monkeypatch
     ) -> None:
         import asyncio
@@ -461,9 +461,8 @@ class TestLegacyRuntimeErrorMapping:
 
         monkeypatch.setattr(legacy_runner, "run_codex_job", _raise_cancelled)
         runtime = LegacyCodexRuntime(runner_mode="demo")
-        with pytest.raises(RuntimeExecutionError) as exc_info:
+        with pytest.raises(asyncio.CancelledError):
             await runtime.run(imo_workspace, task_bundle, AsyncMock())
-        assert exc_info.value.code == "runtime_cancelled"
 
 
 class TestLegacyRuntimeSettingsConstruction:

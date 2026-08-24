@@ -52,7 +52,14 @@ App({
   },
 
   onLaunch(options) {
-    const profile = resolveLaunchProfile(options);
+    let envVersion = "develop";
+    try {
+      envVersion = wx.getAccountInfoSync().miniProgram.envVersion;
+    } catch (_error) {
+      // Old developer tools may not expose account info; staging is the safe
+      // fallback because it cannot invoke real payment.
+    }
+    const profile = resolveLaunchProfile(options, { envVersion });
     this.globalData.profile = profile;
 
     const sessions = createSessionStore({ storage: createWxStorage(wx) });

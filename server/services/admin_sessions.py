@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -43,6 +44,8 @@ SESSION_TTL = timedelta(hours=12)
 #: Five failures per username+IP inside this window earn a 429.
 RATE_LIMIT_WINDOW = timedelta(minutes=15)
 MAX_FAILED_LOGINS = 5
+MAX_RATE_LIMIT_KEYS = 10_000
+_GLOBAL_PRUNE_INTERVAL = timedelta(minutes=1)
 _TOKEN_BYTES = 32
 
 _HASHER = PasswordHasher(type=Type.ID)
@@ -140,7 +143,24 @@ class LoginRateLimiter:
     """
 
     def __init__(self) -> None:
-        self._failures: dict[tuple[str, str], list[datetime]] = {}
+        self._failures: OrderedDict[tuple[str, str], list[datetime]] = OrderedDict()
+        self._last_pruned_at: datetime | None = None
+
+    def _prune(self, now: datetime, *, force: bool = False) -> None:
+        if (
+            not force
+            and self._last_pruned_at is not None
+            and now - self._last_pruned_at < _GLOBAL_PRUNE_INTERVAL
+        ):
+            return
+        cutoff = now - RATE_LIMIT_WINDOW
+        for key, stamps in list(self._failures.items()):
+            recent = [stamp for stamp in stamps if stamp > cutoff]
+            if recent:
+                self._failures[key] = recent
+            else:
+                self._failures.pop(key, None)
+        self._last_pruned_at = now
 
     def _recent(self, key: tuple[str, str], now: datetime) -> list[datetime]:
         cutoff = now - RATE_LIMIT_WINDOW
@@ -153,6 +173,7 @@ class LoginRateLimiter:
 
     def check(self, username: str, address: str, *, now: datetime | None = None) -> None:
         now = now or _now()
+        self._prune(now)
         if len(self._recent((username, address), now)) >= MAX_FAILED_LOGINS:
             raise RateLimited
 
@@ -161,7 +182,13 @@ class LoginRateLimiter:
     ) -> None:
         now = now or _now()
         key = (username, address)
+        self._prune(now)
+        if key not in self._failures and len(self._failures) >= MAX_RATE_LIMIT_KEYS:
+            self._prune(now, force=True)
+        while key not in self._failures and len(self._failures) >= MAX_RATE_LIMIT_KEYS:
+            self._failures.popitem(last=False)
         self._failures.setdefault(key, []).append(now)
+        self._failures.move_to_end(key)
         self._recent(key, now)
 
     def reset(self, username: str, address: str) -> None:

@@ -1,9 +1,9 @@
-"""Verbatim copy of the verified legacy grading modules.
+"""Verified legacy grading logic behind the Worker adapter.
 
 These modules are imported from ``worker.runtime.legacy_codex`` and must not
-be edited except to fix a verified bug. The Phase 04 adapter wraps them
-without changing their behaviour so the grading effect stays identical to
-the legacy single-machine runner.
+be edited only for verified correctness or lifecycle fixes. Process groups,
+bounded log streaming and canonical page ordering have been added without
+changing prompts, scoring rules or report rendering.
 
 The original modules lived in ``app/`` and were copied from git history at
 ``6445f11^`` (the last commit before the legacy project was migrated out of

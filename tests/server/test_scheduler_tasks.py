@@ -18,13 +18,24 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from server.domain.states import JobState, OrderState
-from server.models import FileObject, GradingJob, Order, QuoteSession, Refund
+from server.models import (
+    AdminSession,
+    FileObject,
+    GradingJob,
+    MiniappSession,
+    Order,
+    QuoteSession,
+    Refund,
+    WorkerEvent,
+)
 from server.scheduler.tasks import SchedulerTasks, TaskReport
 from server.services.files import FileState
 from server.services.refunds import RefundState
 from tests.server.conftest import (
     ADMIN_SHARED_KEY,
     authenticate,
+    admin_login,
+    create_admin,
     create_quote,
     deliver_v1_order,
     make_refund_request,
@@ -269,6 +280,28 @@ def test_scheduler_never_requeues_a_started_job(
     with session_factory() as session:
         job = session.get(GradingJob, leased["job_id"])
     assert job.state == JobState.WORKER_EXCEPTION
+
+
+def test_scheduler_cancels_a_legacy_job_whose_order_cannot_run(
+    authenticated_client: TestClient,
+    tasks: SchedulerTasks,
+    session_factory: sessionmaker[Session],
+) -> None:
+    order_id = pay_for_new_order(authenticated_client)
+    with session_factory() as session:
+        order = session.get(Order, order_id)
+        order.state = OrderState.REFUND_PENDING
+        session.add(order)
+        session.commit()
+
+    report = tasks.reconcile_nonrunnable_jobs()
+
+    assert report.affected == 1
+    with session_factory() as session:
+        job = session.scalar(
+            select(GradingJob).where(GradingJob.order_id == order_id)
+        )
+    assert job.state == JobState.CANCELLED
     assert job.state != JobState.QUEUED
 
 
@@ -359,6 +392,117 @@ def test_quote_cleanup_is_idempotent(
 
     assert first.affected >= 1
     assert second.affected == 0, "already-deleted files must not be revisited"
+
+
+def test_quote_cleanup_drains_past_a_finished_first_batch(
+    authenticated_client: TestClient,
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    from server.adapters.payments import FakePaymentGateway
+
+    quotes = [create_quote(authenticated_client, pages=1) for _ in range(2)]
+    moment = datetime.now(timezone.utc) + timedelta(days=2)
+    with session_factory() as session:
+        for quote in quotes:
+            session.get(QuoteSession, quote["id"]).expires_at = moment - timedelta(days=1)
+        session.commit()
+    small = SchedulerTasks(
+        session_factory,
+        settings=client.app.state.settings,
+        gateway=FakePaymentGateway(),
+        batch_size=1,
+    )
+
+    first = small.delete_expired_quotes(now=moment)
+    second = small.delete_expired_quotes(now=moment)
+    third = small.delete_expired_quotes(now=moment)
+
+    assert (first.affected, second.affected, third.affected) == (1, 1, 0)
+
+
+def test_generic_temporary_cleanup_collects_orphan_result_staging(
+    authenticated_client: TestClient,
+    tasks: SchedulerTasks,
+    session_factory: sessionmaker[Session],
+) -> None:
+    quote = create_quote(authenticated_client, pages=1)
+    moment = datetime.now(timezone.utc) + timedelta(days=2)
+    with session_factory() as session:
+        quote_row = session.get(QuoteSession, quote["id"])
+        file_id = quote_row.source_file_id
+        session.get(FileObject, file_id).expires_at = moment - timedelta(seconds=1)
+        session.commit()
+
+    report = tasks.delete_expired_temporary_files(now=moment)
+
+    assert report.affected == 1
+    with session_factory() as session:
+        assert session.get(FileObject, file_id).state == FileState.DELETED
+
+
+def test_stale_part_cleanup_respects_age_and_suffix(
+    tasks: SchedulerTasks,
+    settings,
+) -> None:
+    import os
+
+    staging = settings.data_dir / "staging"
+    staging.mkdir(parents=True, exist_ok=True)
+    old_part = staging / "old.part"
+    fresh_part = staging / "fresh.part"
+    unrelated = staging / "old.txt"
+    for path in (old_part, fresh_part, unrelated):
+        path.write_bytes(b"scratch")
+    old_stamp = (datetime.now(timezone.utc) - timedelta(hours=3)).timestamp()
+    os.utime(old_part, (old_stamp, old_stamp))
+    os.utime(unrelated, (old_stamp, old_stamp))
+
+    report = tasks.delete_stale_part_files()
+
+    assert report.affected == 1
+    assert not old_part.exists()
+    assert fresh_part.exists()
+    assert unrelated.exists()
+
+
+def test_expired_sessions_and_old_worker_events_are_bounded_and_deleted(
+    authenticated_client: TestClient,
+    tasks: SchedulerTasks,
+    session_factory: sessionmaker[Session],
+) -> None:
+    create_admin(session_factory)
+    admin_login(authenticated_client)
+    pay_for_new_order(authenticated_client)
+    worker_id = register_worker(
+        authenticated_client,
+        installation_id="retention-worker",
+    )["worker_id"]
+    authenticated_client.post(
+        "/worker/v1/jobs/lease",
+        headers={**worker_headers(worker_id), "Prefer": "wait=0"},
+    )
+    moment = datetime.now(timezone.utc)
+    old = moment - timedelta(days=120)
+    with session_factory() as session:
+        for record in session.scalars(select(MiniappSession)).all():
+            record.expires_at = old
+            session.add(record)
+        for record in session.scalars(select(AdminSession)).all():
+            record.expires_at = old
+            session.add(record)
+        for event in session.scalars(select(WorkerEvent)).all():
+            event.created_at = old
+            session.add(event)
+        session.commit()
+
+    report = tasks.delete_expired_sessions_and_events(now=moment)
+
+    assert report.affected >= 3
+    with session_factory() as session:
+        assert count(session, MiniappSession) == 0
+        assert count(session, AdminSession) == 0
+        assert count(session, WorkerEvent) == 0
 
 
 def test_order_files_are_deleted_after_their_retention_window(
@@ -470,6 +614,40 @@ def test_backup_freshness_reports_skipped_until_backups_exist(
 
     assert report.skipped is True
     assert report.affected == 0
+
+
+def test_production_backup_marker_must_be_fresh(
+    tmp_path,
+    session_factory: sessionmaker[Session],
+) -> None:
+    import os
+
+    from server.adapters.payments import FakePaymentGateway
+    from server.config import Environment
+    from tests.server.conftest import build_settings
+
+    marker = tmp_path / "last-success"
+    marker.touch()
+    settings = build_settings(
+        tmp_path,
+        environment=Environment.PRODUCTION,
+        database_url="mysql+pymysql://grader:pw@127.0.0.1/grader",
+        backup_success_marker=marker,
+    )
+    production_tasks = SchedulerTasks(
+        session_factory,
+        settings=settings,
+        gateway=FakePaymentGateway(),
+    )
+    now = datetime.now(timezone.utc)
+
+    assert production_tasks.verify_backup_freshness(now=now).failed is False
+    stale = (now - timedelta(hours=27)).timestamp()
+    os.utime(marker, (stale, stale))
+    report = production_tasks.verify_backup_freshness(now=now)
+
+    assert report.failed is True
+    assert report.error == "backup_stale"
 
 
 # --- the run loop -------------------------------------------------------------

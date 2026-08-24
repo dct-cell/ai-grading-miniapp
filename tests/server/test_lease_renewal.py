@@ -98,6 +98,61 @@ def test_ack_moves_a_leased_job_to_running(
     assert job.ack_deadline is None
 
 
+def test_ack_response_loss_can_be_retried_idempotently(
+    worker_client: TestClient,
+    worker_a: str,
+    leased: dict,
+) -> None:
+    first = ack(worker_client, worker_a, leased["job_id"], leased["lease_version"])
+    second = ack(worker_client, worker_a, leased["job_id"], leased["lease_version"])
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["state"] == JobState.RUNNING
+
+
+def test_worker_failure_is_immediate_and_idempotent(
+    worker_client: TestClient,
+    worker_a: str,
+    running: dict,
+    session_factory: sessionmaker[Session],
+) -> None:
+    payload = {
+        "lease_version": running["lease_version"],
+        "code": "runtime_invalid_json",
+        "message": "grading output did not match the schema",
+    }
+    first = worker_client.post(
+        f"/worker/v1/jobs/{running['job_id']}/fail",
+        json=payload,
+        headers=worker_headers(worker_a),
+    )
+    second = worker_client.post(
+        f"/worker/v1/jobs/{running['job_id']}/fail",
+        json=payload,
+        headers=worker_headers(worker_a),
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["state"] == JobState.WORKER_EXCEPTION
+    with session_factory() as session:
+        job = session.get(GradingJob, running["job_id"])
+        order = session.get(Order, job.order_id)
+        worker = session.get(Worker, worker_a)
+        events = session.scalars(
+            select(WorkerEvent).where(
+                WorkerEvent.job_id == job.id,
+                WorkerEvent.event_type == "job_failed",
+            )
+        ).all()
+    assert job.state == JobState.WORKER_EXCEPTION
+    assert order.state == OrderState.V1_RUNNING
+    assert worker.current_job_id is None
+    assert len(events) == 1
+    assert events[0].details["code"] == "runtime_invalid_json"
+
+
 def test_wrong_worker_cannot_ack(
     worker_client: TestClient,
     worker_b: str,
@@ -153,14 +208,15 @@ def test_ack_after_the_deadline_is_rejected(
         assert session.get(GradingJob, leased["job_id"]).state == JobState.LEASED
 
 
-def test_ack_is_rejected_once_the_job_is_already_running(
+def test_ack_is_idempotent_once_the_job_is_already_running(
     worker_client: TestClient,
     worker_a: str,
     running: dict,
 ) -> None:
     response = ack(worker_client, worker_a, running["job_id"], running["lease_version"])
 
-    assert response.status_code == 409
+    assert response.status_code == 200
+    assert response.json()["state"] == JobState.RUNNING
 
 
 def test_ack_rejects_an_unknown_job(worker_client: TestClient, worker_a: str) -> None:
@@ -417,6 +473,33 @@ def test_a_recently_seen_worker_stays_online(
 
     with session_factory() as session:
         assert session.get(Worker, worker_a).status == WorkerStatus.ONLINE
+
+
+def test_an_idle_long_poll_refreshes_worker_liveness(
+    worker_client: TestClient,
+    lease_service: LeaseService,
+    worker_a: str,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        worker = session.get(Worker, worker_a)
+        worker.last_heartbeat_at = datetime.now(timezone.utc) - timedelta(
+            seconds=OFFLINE_AFTER_SECONDS + 1
+        )
+        session.add(worker)
+        session.commit()
+    lease_service.mark_suspected_offline()
+
+    response = worker_client.post(
+        "/worker/v1/jobs/lease",
+        headers={**worker_headers(worker_a), "Prefer": "wait=0"},
+    )
+
+    assert response.status_code == 204
+    with session_factory() as session:
+        worker = session.get(Worker, worker_a)
+    assert worker.status == WorkerStatus.ONLINE
+    assert worker.last_heartbeat_at > datetime.now(timezone.utc) - timedelta(seconds=5)
 
 
 def test_marking_offline_never_touches_the_held_job(

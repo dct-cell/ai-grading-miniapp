@@ -40,8 +40,8 @@ pytestmark = pytest.mark.skipif(
     reason=f"{MYSQL_URL_VARIABLE} is not set; a real MySQL 8 database is required",
 )
 
-WORKER_COUNT = 3
-JOB_COUNT = 3
+WORKER_COUNT = 10
+JOB_COUNT = 10
 
 
 @pytest.fixture
@@ -65,7 +65,11 @@ def _seed(session_factory) -> tuple[list[str], list[str]]:
     with session_factory() as session:
         user = User(openid=f"fake:mysql-{uuid.uuid4()}", public_id=f"u-{uuid.uuid4().hex[:8]}")
         session.add(user)
-        rule = PriceRule(cents_per_page=1000, effective_from=now)
+        rule = PriceRule(
+            service_tier="annotated_review",
+            cents_per_page=1000,
+            effective_from=now,
+        )
         session.add(rule)
         session.flush()
 
@@ -86,7 +90,9 @@ def _seed(session_factory) -> tuple[list[str], list[str]]:
                 source_file_id=source.id,
                 reference_file_id=None,
                 price_rule_id=rule.id,
+                service_tier="annotated_review",
                 grading_standard="imo",
+                league_scope=None,
                 note="",
                 page_count=2,
                 quoted_amount_cents=2000,
@@ -107,7 +113,9 @@ def _seed(session_factory) -> tuple[list[str], list[str]]:
                 GradingRound(
                     order_id=order.id,
                     round_number=1,
+                    service_tier="annotated_review",
                     grading_standard="imo",
+                    league_scope=None,
                     note="",
                 )
             )
@@ -141,7 +149,7 @@ def _seed(session_factory) -> tuple[list[str], list[str]]:
     return worker_ids, job_ids
 
 
-def test_three_workers_claim_three_distinct_jobs(mysql_session_factory) -> None:
+def test_ten_workers_claim_ten_distinct_jobs(mysql_session_factory) -> None:
     worker_ids, job_ids = _seed(mysql_session_factory)
     service = LeaseService(mysql_session_factory)
     barrier = threading.Barrier(WORKER_COUNT)

@@ -194,23 +194,21 @@ def test_the_endpoint_is_registered_in_production(tmp_path) -> None:
     Unlike the fake login/payment routes it must exist in production, so it is
     deliberately outside FAKE_ADAPTER_ENVIRONMENTS.
     """
-    from server.config import Environment, ServerSettings
+    from server.config import Environment
     from server.main import create_app
+    from tests.server.conftest import build_settings
     from tests.server.test_auth_environment_gate import route_paths
 
-    settings = ServerSettings(
+    settings = build_settings(
+        tmp_path,
         environment=Environment.PRODUCTION,
         database_url="mysql+pymysql://user:pw@127.0.0.1:3306/grader",
-        data_dir=tmp_path / "data",
-        session_secret="s" * 32,
-        worker_shared_key="w" * 40,
-        admin_shared_key="a" * 40,
     )
     app = create_app(settings)
     paths = route_paths(app)
     assert "/api/v1/orders/{order_id}/rounds/{round_number}/result/{kind}" in paths
     # The fake adapters stay gated; adding a real endpoint must not open them.
-    assert "/api/v1/auth/login" not in paths
+    assert "/api/v1/auth/login" in paths
 
 
 def test_content_disposition_names_the_file_safely(

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Header, Request, status
+import hashlib
+from uuid import uuid4
+
+import anyio
+from fastapi import APIRouter, HTTPException, Header, Request, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from server.adapters.files import FileStorageError, LocalFileStore
@@ -77,23 +81,39 @@ async def stage_result_upload(
     kind: ResultKind,
     worker: CurrentWorker,
     request: Request,
+    response: Response,
     settings: Settings,
     x_upload_token: str = Header(...),
     x_content_sha256: str = Header(...),
 ) -> StagedResultView:
-    """Accept one verified result artefact into per-lease staging."""
-    from io import BytesIO
-
-    body = await request.body()
+    """Stream one verified result artefact into per-lease staging."""
+    service = _service(request, settings)
+    incoming = LocalFileStore(settings.data_dir).resolve(
+        f"staging/worker-upload-{uuid4().hex}.part"
+    )
+    incoming.parent.mkdir(parents=True, exist_ok=True)
     try:
-        staged = _service(request, settings).stage_upload(
-            job_id=job_id,
-            worker_id=worker.worker_id,
-            kind=kind,
-            token=x_upload_token,
-            declared_sha256=x_content_sha256,
-            stream=BytesIO(body),
-        )
+        digest = hashlib.sha256()
+        received = 0
+        limit = service.max_bytes(kind)
+        async with await anyio.open_file(incoming, "wb") as output:
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > limit:
+                    raise UploadRejected(f"文件超过 {limit} 字节上限。")
+                digest.update(chunk)
+                await output.write(chunk)
+        if digest.hexdigest() != x_content_sha256.lower():
+            raise UploadRejected("上传内容的 SHA-256 与声明不一致。")
+        with incoming.open("rb") as stream:
+            staged = service.stage_upload(
+                job_id=job_id,
+                worker_id=worker.worker_id,
+                kind=kind,
+                token=x_upload_token,
+                declared_sha256=x_content_sha256,
+                stream=stream,
+            )
     except UploadNotAuthorized as error:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -109,6 +129,11 @@ async def stage_result_upload(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
         ) from None
+    finally:
+        incoming.unlink(missing_ok=True)
+    response.status_code = (
+        status.HTTP_200_OK if staged.already_staged else status.HTTP_201_CREATED
+    )
     return StagedResultView(
         file_id=staged.file_id,
         kind=str(staged.kind),

@@ -89,7 +89,12 @@ class AdminOrderDetail:
     timeline: tuple[TimelineEvent, ...]
 
 
-def collect_overview(session: Session, *, data_dir: Path) -> OverviewSnapshot:
+def collect_overview(
+    session: Session,
+    *,
+    data_dir: Path,
+    backup_success_marker: Path | None = None,
+) -> OverviewSnapshot:
     """Count everything the overview shows from one read of the database.
 
     A single session and no intervening commit means every count observes the
@@ -141,25 +146,32 @@ def collect_overview(session: Session, *, data_dir: Path) -> OverviewSnapshot:
             "pending_manual": int(pending_manual or 0),
             "failed": int(failed_refunds or 0),
         },
-        storage=_storage_health(data_dir),
+        storage=_storage_health(data_dir, backup_success_marker),
     )
 
 
-def _storage_health(data_dir: Path) -> dict[str, object]:
-    """Report disk pressure, and refuse to invent a backup age.
-
-    Real encrypted off-site backups are Phase 09. Reporting anything other than
-    ``None`` here would let the dashboard imply a recovery point that does not
-    exist, which is worse than showing nothing.
-    """
+def _storage_health(
+    data_dir: Path,
+    backup_success_marker: Path | None,
+) -> dict[str, object]:
+    """Report disk pressure and only a backup age proven by its marker."""
     try:
         usage = shutil.disk_usage(data_dir)
         used_percent = round(usage.used / usage.total * 100, 1)
     except (OSError, ZeroDivisionError):
         used_percent = None
+    backup_age = None
+    if backup_success_marker is not None:
+        try:
+            backup_age = max(
+                0,
+                int(datetime.now(timezone.utc).timestamp() - backup_success_marker.stat().st_mtime),
+            )
+        except OSError:
+            pass
     return {
         "used_percent": used_percent,
-        "latest_backup_age_seconds": None,
+        "latest_backup_age_seconds": backup_age,
     }
 
 

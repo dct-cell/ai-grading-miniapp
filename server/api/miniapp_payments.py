@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from secrets import token_hex
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
-from server.adapters.payments import FakePaymentGateway
+from server.adapters.payments import PaymentGatewayUnavailable
 from server.api.dependencies import CurrentUser, DatabaseSession
 from server.schemas.payments import PrepayRequestBody, PrepayView
 from server.services.payments import (
@@ -30,11 +30,12 @@ def create_payment_intent(
     payload: PrepayRequestBody,
     user: CurrentUser,
     session: DatabaseSession,
+    request: Request,
 ) -> PrepayView:
     try:
         intent = create_prepay(
             session=session,
-            gateway=FakePaymentGateway(),
+            gateway=request.app.state.payment_gateway,
             owner_user_id=user.id,
             quote_id=payload.quote_id,
         )
@@ -47,6 +48,11 @@ def create_payment_intent(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
+        ) from None
+    except PaymentGatewayUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="支付服务暂时不可用，请稍后重试。",
         ) from None
 
     return PrepayView(

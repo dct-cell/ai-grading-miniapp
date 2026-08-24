@@ -28,6 +28,8 @@ _SENSITIVE_FIELDS: tuple[str, ...] = (
     "session_secret",
     "worker_shared_key",
     "admin_shared_key",
+    "wechat_app_secret",
+    "wechat_pay_api_v3_key",
 )
 
 
@@ -135,7 +137,7 @@ class ServerSettings(BaseSettings):
     #: Retired in Phase 07. No code path authenticates an admin with this key
     #: any more — Argon2id passwords over opaque cookie sessions replaced it —
     #: but the field stays so that an existing deployment's ``.env`` keeps
-    #: loading. Phase 08 removes it along with the line in ``.env.example``.
+    #: loading. It is parsed for compatibility and never consulted.
     admin_shared_key: _SensitiveSecret = Field(min_length=32, repr=False)
     #: The exact origin the Admin SPA is served from. Every state-changing
     #: Admin request must carry a matching ``Origin`` header, so this is a
@@ -155,6 +157,48 @@ class ServerSettings(BaseSettings):
     max_pdf_pages: int = Field(default=30, ge=1)
     quote_ttl_seconds: int = Field(default=86400, ge=60)
     acceptance_ttl_seconds: int = Field(default=259200, ge=60)
+    wechat_live_mode: bool = False
+    wechat_app_id: str | None = None
+    wechat_app_secret: _SensitiveString | None = Field(default=None, repr=False)
+    wechat_pay_merchant_id: str | None = None
+    wechat_pay_certificate_serial: str | None = None
+    wechat_pay_private_key_path: Path | None = None
+    wechat_pay_public_key_id: str | None = None
+    wechat_pay_public_key_path: Path | None = None
+    wechat_pay_api_v3_key: _SensitiveSecret | None = Field(default=None, repr=False)
+    wechat_pay_notify_url: str = "https://api.skyedumath.com/callbacks/wechat/pay"
+    wechat_pay_refund_notify_url: str = (
+        "https://api.skyedumath.com/callbacks/wechat/refund"
+    )
+    backup_success_marker: Path = Path("/var/lib/grader-backup/last-success")
+
+    def require_wechat_production_settings(self) -> None:
+        """Fail startup before a live-WeChat environment can use fake adapters."""
+        if self.environment is not Environment.PRODUCTION and not self.wechat_live_mode:
+            return
+        required = {
+            "wechat_app_id": self.wechat_app_id,
+            "wechat_app_secret": self.wechat_app_secret,
+            "wechat_pay_merchant_id": self.wechat_pay_merchant_id,
+            "wechat_pay_certificate_serial": self.wechat_pay_certificate_serial,
+            "wechat_pay_private_key_path": self.wechat_pay_private_key_path,
+            "wechat_pay_public_key_id": self.wechat_pay_public_key_id,
+            "wechat_pay_public_key_path": self.wechat_pay_public_key_path,
+            "wechat_pay_api_v3_key": self.wechat_pay_api_v3_key,
+        }
+        missing = [name for name, value in required.items() if value in {None, ""}]
+        if missing:
+            raise ValueError(
+                "production WeChat configuration is incomplete: "
+                + ", ".join(sorted(missing))
+            )
+        for field_name in (
+            "wechat_pay_private_key_path",
+            "wechat_pay_public_key_path",
+        ):
+            path = Path(getattr(self, field_name))
+            if not path.is_file():
+                raise ValueError(f"{field_name} does not exist")
 
     @model_validator(mode="before")
     @classmethod

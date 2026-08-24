@@ -130,7 +130,11 @@ def read_overview(
     settings: Settings,
 ) -> OverviewView:
     del admin
-    snapshot = collect_overview(session, data_dir=settings.data_dir)
+    snapshot = collect_overview(
+        session,
+        data_dir=settings.data_dir,
+        backup_success_marker=settings.backup_success_marker,
+    )
     return OverviewView(
         orders=snapshot.orders,
         jobs=snapshot.jobs,

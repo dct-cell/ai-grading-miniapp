@@ -83,7 +83,17 @@ def test_non_sqlite_factory_omits_sqlite_connect_args(
     assert factory.kw["bind"] is sentinel_engine
     assert captured == {
         "database_url": "mysql+pymysql://user:pass@db/grader",
-        "kwargs": {"pool_pre_ping": True},
+        "kwargs": {
+            "pool_pre_ping": True,
+            "pool_size": 5,
+            "max_overflow": 5,
+            "pool_recycle": 1800,
+            "connect_args": {
+                "connect_timeout": 10,
+                "read_timeout": 30,
+                "write_timeout": 30,
+            },
+        },
     }
 
 

@@ -24,14 +24,23 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Final
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, or_, select, union_all, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from server.adapters.files import FileStorageError, LocalFileStore
 from server.adapters.payments import PaymentGateway
 from server.config import ServerSettings
 from server.domain.states import OrderState, require_order_transition
-from server.models import FileObject, GradingRound, Order, QuoteSession, Refund
+from server.models import (
+    AdminSession,
+    FileObject,
+    GradingRound,
+    MiniappSession,
+    Order,
+    QuoteSession,
+    Refund,
+    WorkerEvent,
+)
 from server.services.files import FileState
 from server.services.leases import LeaseService
 from server.services.refunds import RefundService, RefundState
@@ -41,6 +50,9 @@ DEFAULT_BATCH_SIZE: Final[int] = 200
 
 #: How long a finished order's artefacts are kept before collection.
 ORDER_FILE_RETENTION = timedelta(days=30)
+SESSION_ROW_RETENTION = timedelta(days=30)
+WORKER_EVENT_RETENTION = timedelta(days=90)
+PART_FILE_RETENTION = timedelta(hours=2)
 
 #: Orders whose acceptance deadline the scheduler may act on. REFUND_PENDING is
 #: deliberately absent: a refund decision is in flight and must not be
@@ -86,9 +98,14 @@ class SchedulerTasks:
     TASK_NAMES: Final[tuple[str, ...]] = (
         "release_unacknowledged_leases",
         "mark_expired_running_leases",
+        "reconcile_nonrunnable_jobs",
+        "mark_suspected_offline",
         "auto_accept_expired_orders",
         "delete_expired_quotes",
         "delete_expired_order_files",
+        "delete_expired_temporary_files",
+        "delete_stale_part_files",
+        "delete_expired_sessions_and_events",
         "retry_failed_refund_queries",
         "verify_backup_freshness",
     )
@@ -162,6 +179,21 @@ class SchedulerTasks:
         expired = self._leases.expire_started_leases(now=now)
         return TaskReport(name="mark_expired_running_leases", affected=expired)
 
+    def reconcile_nonrunnable_jobs(
+        self, *, now: datetime | None = None
+    ) -> TaskReport:
+        repaired = self._leases.reconcile_nonrunnable_jobs(
+            now=now,
+            limit=self.batch_size,
+        )
+        return TaskReport(name="reconcile_nonrunnable_jobs", affected=repaired)
+
+    def mark_suspected_offline(
+        self, *, now: datetime | None = None
+    ) -> TaskReport:
+        marked = self._leases.mark_suspected_offline(now=now)
+        return TaskReport(name="mark_suspected_offline", affected=marked)
+
     # -- acceptance----------------------------------------------------------
 
     def acceptance_candidates(self, *, now: datetime | None = None) -> list[str]:
@@ -233,20 +265,23 @@ class SchedulerTasks:
         """
         moment = now or datetime.now(timezone.utc)
         with self._session_factory() as session:
-            file_ids = session.execute(
-                select(QuoteSession.source_file_id, QuoteSession.reference_file_id)
-                .where(
-                    QuoteSession.consumed_at.is_(None),
-                    QuoteSession.expires_at <= moment,
-                )
-                .limit(self.batch_size)
-            ).all()
-            candidates = [
-                file_id
-                for row in file_ids
-                for file_id in row
-                if file_id is not None
-            ]
+            common = (
+                QuoteSession.consumed_at.is_(None),
+                QuoteSession.expires_at <= moment,
+            )
+            candidates_query = union_all(
+                select(QuoteSession.source_file_id.label("file_id"))
+                .join(FileObject, FileObject.id == QuoteSession.source_file_id)
+                .where(*common, FileObject.state != FileState.DELETED),
+                select(QuoteSession.reference_file_id.label("file_id"))
+                .join(FileObject, FileObject.id == QuoteSession.reference_file_id)
+                .where(*common, FileObject.state != FileState.DELETED),
+            ).subquery()
+            candidates = list(
+                session.scalars(
+                    select(candidates_query.c.file_id).limit(self.batch_size)
+                ).all()
+            )
             affected = self._collect_files(session, candidates, moment)
             session.commit()
         return TaskReport(name="delete_expired_quotes", affected=affected)
@@ -258,43 +293,126 @@ class SchedulerTasks:
         moment = now or datetime.now(timezone.utc)
         cutoff = moment - ORDER_FILE_RETENTION
         with self._session_factory() as session:
-            orders = session.scalars(
-                select(Order)
-                .where(
-                    Order.state.in_(FINISHED_ORDER_STATES),
-                    Order.created_at <= cutoff,
-                )
-                .order_by(Order.created_at)
-                .limit(self.batch_size)
-            ).all()
-
-            candidates: list[str] = []
-            for order in orders:
-                quote = session.get(QuoteSession, order.quote_session_id)
-                if quote is not None:
-                    candidates.extend(
-                        file_id
-                        for file_id in (
-                            quote.source_file_id,
-                            quote.reference_file_id,
-                        )
-                        if file_id is not None
-                    )
-                for round_record in session.scalars(
-                    select(GradingRound).where(GradingRound.order_id == order.id)
-                ).all():
-                    candidates.extend(
-                        file_id
-                        for file_id in (
-                            round_record.result_json_file_id,
-                            round_record.result_pdf_file_id,
-                        )
-                        if file_id is not None
-                    )
+            order_filter = (
+                Order.state.in_(FINISHED_ORDER_STATES),
+                Order.created_at <= cutoff,
+            )
+            candidates_query = union_all(
+                select(QuoteSession.source_file_id.label("file_id"))
+                .join(Order, Order.quote_session_id == QuoteSession.id)
+                .join(FileObject, FileObject.id == QuoteSession.source_file_id)
+                .where(*order_filter, FileObject.state != FileState.DELETED),
+                select(QuoteSession.reference_file_id.label("file_id"))
+                .join(Order, Order.quote_session_id == QuoteSession.id)
+                .join(FileObject, FileObject.id == QuoteSession.reference_file_id)
+                .where(*order_filter, FileObject.state != FileState.DELETED),
+                select(GradingRound.result_json_file_id.label("file_id"))
+                .join(Order, Order.id == GradingRound.order_id)
+                .join(FileObject, FileObject.id == GradingRound.result_json_file_id)
+                .where(*order_filter, FileObject.state != FileState.DELETED),
+                select(GradingRound.result_pdf_file_id.label("file_id"))
+                .join(Order, Order.id == GradingRound.order_id)
+                .join(FileObject, FileObject.id == GradingRound.result_pdf_file_id)
+                .where(*order_filter, FileObject.state != FileState.DELETED),
+            ).subquery()
+            candidates = list(
+                session.scalars(
+                    select(candidates_query.c.file_id).limit(self.batch_size)
+                ).all()
+            )
 
             affected = self._collect_files(session, candidates, moment)
             session.commit()
         return TaskReport(name="delete_expired_order_files", affected=affected)
+
+    def delete_expired_temporary_files(
+        self, *, now: datetime | None = None
+    ) -> TaskReport:
+        """Collect any expired temporary object, including result staging."""
+        moment = now or datetime.now(timezone.utc)
+        with self._session_factory() as session:
+            candidates = list(
+                session.scalars(
+                    select(FileObject.id)
+                    .where(
+                        FileObject.state == FileState.TEMPORARY,
+                        FileObject.expires_at <= moment,
+                    )
+                    .order_by(FileObject.expires_at, FileObject.id)
+                    .limit(self.batch_size)
+                ).all()
+            )
+            affected = self._collect_files(session, candidates, moment)
+            session.commit()
+        return TaskReport(name="delete_expired_temporary_files", affected=affected)
+
+    def delete_stale_part_files(
+        self, *, now: datetime | None = None
+    ) -> TaskReport:
+        """Remove abandoned atomic-write scratch files without following links."""
+        moment = now or datetime.now(timezone.utc)
+        cutoff = moment.timestamp() - PART_FILE_RETENTION.total_seconds()
+        staging = self._settings.data_dir / "staging"
+        affected = 0
+        if staging.is_dir():
+            for entry in sorted(staging.iterdir(), key=lambda path: path.name):
+                if affected >= self.batch_size:
+                    break
+                try:
+                    if (
+                        entry.is_symlink()
+                        or not entry.name.endswith(".part")
+                        or not entry.is_file()
+                        or entry.stat().st_mtime > cutoff
+                    ):
+                        continue
+                    entry.unlink()
+                    affected += 1
+                except OSError:
+                    continue
+        return TaskReport(name="delete_stale_part_files", affected=affected)
+
+    def delete_expired_sessions_and_events(
+        self, *, now: datetime | None = None
+    ) -> TaskReport:
+        """Apply bounded retention while leaving immutable AuditLog untouched."""
+        moment = now or datetime.now(timezone.utc)
+        session_cutoff = moment - SESSION_ROW_RETENTION
+        event_cutoff = moment - WORKER_EVENT_RETENTION
+        affected = 0
+        with self._session_factory() as session:
+            for model in (MiniappSession, AdminSession):
+                ids = list(
+                    session.scalars(
+                        select(model.id)
+                        .where(
+                            or_(
+                                model.expires_at <= session_cutoff,
+                                model.revoked_at <= session_cutoff,
+                            )
+                        )
+                        .order_by(model.expires_at, model.id)
+                        .limit(self.batch_size)
+                    ).all()
+                )
+                if ids:
+                    affected += session.execute(
+                        delete(model).where(model.id.in_(ids))
+                    ).rowcount
+            event_ids = list(
+                session.scalars(
+                    select(WorkerEvent.id)
+                    .where(WorkerEvent.created_at <= event_cutoff)
+                    .order_by(WorkerEvent.created_at, WorkerEvent.id)
+                    .limit(self.batch_size)
+                ).all()
+            )
+            if event_ids:
+                affected += session.execute(
+                    delete(WorkerEvent).where(WorkerEvent.id.in_(event_ids))
+                ).rowcount
+            session.commit()
+        return TaskReport(name="delete_expired_sessions_and_events", affected=affected)
 
     def _collect_files(
         self,
@@ -342,7 +460,7 @@ class SchedulerTasks:
                 session.scalars(
                     select(Refund.id)
                     .where(Refund.state == RefundState.REFUND_FAILED)
-                    .order_by(Refund.created_at)
+                    .order_by(Refund.updated_at, Refund.created_at, Refund.id)
                     .limit(self.batch_size)
                 ).all()
             )
@@ -357,11 +475,25 @@ class SchedulerTasks:
     # -- backups -------------------------------------------------------------
 
     def verify_backup_freshness(self, *, now: datetime | None = None) -> TaskReport:
-        """Check that a recent encrypted backup exists.
+        """Require a successful off-host backup marker newer than 26 hours."""
+        from server.config import Environment
 
-        Encrypted COS backups are Phase 09. The task is wired in now so the
-        cycle's shape is final, but with no backup system to interrogate it
-        reports``skipped`` rather than inventing a healthy result — an
-        unimplemented check must never look like a passing one.
-        """
-        return TaskReport(name="verify_backup_freshness", skipped=True)
+        if self._settings.environment is not Environment.PRODUCTION:
+            return TaskReport(name="verify_backup_freshness", skipped=True)
+        moment = now or datetime.now(timezone.utc)
+        marker = self._settings.backup_success_marker
+        try:
+            completed = datetime.fromtimestamp(marker.stat().st_mtime, timezone.utc)
+        except OSError:
+            return TaskReport(
+                name="verify_backup_freshness",
+                failed=True,
+                error="backup_marker_missing",
+            )
+        if moment - completed > timedelta(hours=26):
+            return TaskReport(
+                name="verify_backup_freshness",
+                failed=True,
+                error="backup_stale",
+            )
+        return TaskReport(name="verify_backup_freshness", affected=0)

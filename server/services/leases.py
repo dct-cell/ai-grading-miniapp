@@ -4,14 +4,14 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, and_, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from server.db_locking import lock_row
 from server.domain.states import (
     JobState,
     OrderState,
     require_job_transition,
-    require_order_transition,
 )
 from server.models import (
     FileObject,
@@ -35,6 +35,9 @@ ACTIVE_JOB_STATES = frozenset(
     {JobState.LEASED, JobState.RUNNING, JobState.UPLOADING}
 )
 STARTED_JOB_STATES = frozenset({JobState.RUNNING, JobState.UPLOADING})
+CANCELLABLE_JOB_STATES = frozenset(
+    {JobState.QUEUED, JobState.LEASED, JobState.RUNNING, JobState.UPLOADING}
+)
 
 _DOWNLOAD_TOKEN_BYTES = 32
 
@@ -69,21 +72,49 @@ class TaskBundle:
     lease_expires_at: datetime
 
 
-def _lock(session: Session, model, primary_key: str):
-    """Take a row lock where the backend supports one.
-
-    Mirrors server.services.payments._lock deliberately. SQLite silently
-    ignores FOR UPDATE and allows only one writer, so tests must prove
-    concurrency invariants through state checks and constraints rather than
-    threads; MySQL issues a real SELECT ... FOR UPDATE.
-    """
-    if session.get_bind().dialect.name == "sqlite":
-        return session.get(model, primary_key)
-    return session.get(model, primary_key, with_for_update=True)
-
-
 def _issue_download_token() -> str:
     return secrets.token_urlsafe(_DOWNLOAD_TOKEN_BYTES)
+
+
+def cancel_job(
+    session: Session,
+    job: GradingJob,
+    *,
+    event_type: str = "cancelled",
+) -> bool:
+    """Cancel one unfinished job and release every capability it granted.
+
+    The caller owns the surrounding transaction and must have locked ``job``.
+    Keeping this operation beside the lease writer prevents refund and repair
+    paths from clearing only part of the fencing state.
+    """
+    if JobState(job.state) not in CANCELLABLE_JOB_STATES:
+        return False
+    previous_worker_id = job.worker_id
+    require_job_transition(JobState(job.state), JobState.CANCELLED)
+    job.state = JobState.CANCELLED
+    job.ack_deadline = None
+    job.lease_expires_at = None
+    job.bundle_download_tokens = None
+    session.add(job)
+    if previous_worker_id is not None:
+        session.execute(
+            update(Worker)
+            .where(
+                Worker.worker_id == previous_worker_id,
+                Worker.current_job_id == job.id,
+            )
+            .values(current_job_id=None)
+        )
+        session.add(
+            WorkerEvent(
+                worker_id=previous_worker_id,
+                job_id=job.id,
+                event_type=event_type,
+                details={"lease_version": job.lease_version},
+            )
+        )
+    return True
 
 
 class LeaseService:
@@ -122,63 +153,86 @@ class LeaseService:
         lock, the state transition and the lease_version bump commit together
         so two Workers can never hold the same job.
         """
-        with self._session_factory() as session:
-            worker = _lock(session, Worker, worker_id)
-            # Draining and disabled both withhold the next lease. The check is
-            # inside the same transaction as the claim, so an operator draining a
-            # Worker cannot race a lease it was about to be granted.
-            if worker is None or worker.status in NON_LEASABLE_STATUSES:
-                return None
-            if self._holds_active_job(session, worker_id):
-                return None
+        # Keep the indexed claim query exactly on (state, queued_at, id).
+        # A bounded loop repairs legacy poisoned head rows without adding an
+        # Order join that makes MySQL abandon the SKIP LOCKED claim index.
+        for _ in range(16):
+            with self._session_factory() as session:
+                worker = lock_row(session, Worker, worker_id)
+                if worker is None or worker.status in NON_LEASABLE_STATUSES:
+                    return None
+                if self._holds_active_job(session, worker_id):
+                    return None
 
-            job = session.scalars(self._claim_statement()).first()
-            if job is None:
-                return None
+                job = session.scalars(self._claim_statement()).first()
+                if job is None:
+                    return None
 
-            now = datetime.now(timezone.utc)
-            require_job_transition(JobState(job.state), JobState.LEASED)
-            job.state = JobState.LEASED
-            job.worker_id = worker_id
-            job.lease_version = job.lease_version + 1
-            job.ack_deadline = now + timedelta(seconds=ACK_SECONDS)
-            job.lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
-            job.attempt_count = job.attempt_count + 1
-            session.add(job)
-
-            worker.current_job_id = job.id
-            worker.last_heartbeat_at = now
-            session.add(worker)
-
-            order = session.get(Order, job.order_id)
-            running = (
-                OrderState.V1_RUNNING if job.round_number == 1 else OrderState.V2_RUNNING
-            )
-            if order.state != running:
-                require_order_transition(OrderState(order.state), running)
-                order.state = running
-                session.add(order)
-
-            bundle = self._build_bundle(session, job)
-            job.bundle_download_tokens = {
-                "source": bundle.source_file.download_token,
-                "reference": (
-                    bundle.reference_file.download_token
-                    if bundle.reference_file is not None
-                    else None
-                ),
-            }
-            session.add(job)
-            session.add(
-                WorkerEvent(
-                    worker_id=worker_id,
-                    job_id=job.id,
-                    event_type="leased",
-                    details={"lease_version": job.lease_version},
+                queued = (
+                    OrderState.V1_QUEUED
+                    if job.round_number == 1
+                    else OrderState.V2_QUEUED
                 )
-            )
-            session.commit()
-            return bundle
+                running = (
+                    OrderState.V1_RUNNING
+                    if job.round_number == 1
+                    else OrderState.V2_RUNNING
+                )
+                order = lock_row(session, Order, job.order_id)
+                if order is None or OrderState(order.state) is not queued:
+                    cancel_job(
+                        session,
+                        job,
+                        event_type="nonrunnable_job_skipped",
+                    )
+                    session.commit()
+                    continue
+
+                moved = session.execute(
+                    update(Order)
+                    .where(Order.id == order.id, Order.state == queued)
+                    .values(state=running)
+                )
+                if moved.rowcount != 1:
+                    session.rollback()
+                    continue
+                session.expire(order)
+
+                now = datetime.now(timezone.utc)
+                require_job_transition(JobState(job.state), JobState.LEASED)
+                job.state = JobState.LEASED
+                job.worker_id = worker_id
+                job.lease_version = job.lease_version + 1
+                job.ack_deadline = now + timedelta(seconds=ACK_SECONDS)
+                job.lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
+                job.attempt_count = job.attempt_count + 1
+                session.add(job)
+
+                worker.current_job_id = job.id
+                worker.last_heartbeat_at = now
+                session.add(worker)
+
+                bundle = self._build_bundle(session, job)
+                job.bundle_download_tokens = {
+                    "source": bundle.source_file.download_token,
+                    "reference": (
+                        bundle.reference_file.download_token
+                        if bundle.reference_file is not None
+                        else None
+                    ),
+                }
+                session.add(job)
+                session.add(
+                    WorkerEvent(
+                        worker_id=worker_id,
+                        job_id=job.id,
+                        event_type="leased",
+                        details={"lease_version": job.lease_version},
+                    )
+                )
+                session.commit()
+                return bundle
+        return None
 
     def _build_bundle(self, session: Session, job: GradingJob) -> TaskBundle:
         order = session.get(Order, job.order_id)
@@ -234,7 +288,7 @@ class LeaseService:
         Every write path funnels through here so a wrong Worker or a stale
         fencing token can never mutate somebody else's job.
         """
-        job = _lock(session, GradingJob, job_id)
+        job = lock_row(session, GradingJob, job_id)
         if job is None:
             raise LeaseConflict("批改任务不存在或租约已失效。")
         if job.worker_id != worker_id:
@@ -258,13 +312,19 @@ class LeaseService:
         to all match; anything else is a conflict.
         """
         with self._session_factory() as session:
-            job = self._fenced_job(
-                session,
-                job_id=job_id,
-                worker_id=worker_id,
-                lease_version=lease_version,
-                allowed_states=frozenset({JobState.LEASED}),
-            )
+            job = lock_row(session, GradingJob, job_id)
+            if (
+                job is None
+                or job.worker_id != worker_id
+                or job.lease_version != lease_version
+            ):
+                raise LeaseConflict("批改任务不存在或租约已失效。")
+            # The Worker may have ACKed successfully while the HTTP response
+            # was lost.  Returning the same fenced state makes that retry safe.
+            if job.state == JobState.RUNNING:
+                return job
+            if job.state != JobState.LEASED:
+                raise LeaseConflict("批改任务不存在或租约已失效。")
             now = datetime.now(timezone.utc)
             if job.ack_deadline is None or job.ack_deadline <= now:
                 raise LeaseConflict("批改任务不存在或租约已失效。")
@@ -326,6 +386,59 @@ class LeaseService:
                         details={"lease_version": job.lease_version, "phase": phase},
                     )
                 )
+            session.commit()
+            return job
+
+    def fail_job(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        lease_version: int,
+        code: str,
+        message: str,
+    ) -> GradingJob:
+        """Record a deterministic Worker failure exactly once.
+
+        The order deliberately remains in its running state: the established
+        product policy routes these cases to Admin technical refund rather than
+        automatically re-running an expensive Codex session.
+        """
+        with self._session_factory() as session:
+            job = lock_row(session, GradingJob, job_id)
+            if (
+                job is None
+                or job.worker_id != worker_id
+                or job.lease_version != lease_version
+            ):
+                raise LeaseConflict("批改任务不存在或租约已失效。")
+            if job.state == JobState.WORKER_EXCEPTION:
+                return job
+            if job.state not in STARTED_JOB_STATES:
+                raise LeaseConflict("批改任务不存在或租约已失效。")
+
+            require_job_transition(
+                JobState(job.state),
+                JobState.WORKER_EXCEPTION,
+            )
+            job.state = JobState.WORKER_EXCEPTION
+            job.ack_deadline = None
+            job.lease_expires_at = None
+            job.bundle_download_tokens = None
+            session.add(job)
+            self._clear_worker_job(session, worker_id, job.id)
+            session.add(
+                WorkerEvent(
+                    worker_id=worker_id,
+                    job_id=job.id,
+                    event_type="job_failed",
+                    details={
+                        "lease_version": job.lease_version,
+                        "code": code,
+                        "message": message,
+                    },
+                )
+            )
             session.commit()
             return job
 
@@ -445,6 +558,83 @@ class LeaseService:
             session.commit()
         return marked
 
+    def reconcile_nonrunnable_jobs(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int = 200,
+    ) -> int:
+        """Cancel legacy jobs whose order can no longer run that round.
+
+        New refunds cancel their job transactionally.  This bounded repair is
+        deliberately retained for rows written by older releases or an
+        interrupted historical transaction, so one poisoned row can never sit
+        at the head of the queue forever.
+        """
+        del now  # Kept for the Scheduler task signature.
+        repaired = 0
+        with self._session_factory() as session:
+            statement = (
+                select(GradingJob)
+                .join(Order, Order.id == GradingJob.order_id)
+                .where(
+                    GradingJob.state.in_(CANCELLABLE_JOB_STATES),
+                    ~or_(
+                        and_(
+                            GradingJob.round_number == 1,
+                            GradingJob.state == JobState.QUEUED,
+                            Order.state == OrderState.V1_QUEUED,
+                        ),
+                        and_(
+                            GradingJob.round_number == 2,
+                            GradingJob.state == JobState.QUEUED,
+                            Order.state == OrderState.V2_QUEUED,
+                        ),
+                        and_(
+                            GradingJob.round_number == 1,
+                            GradingJob.state.in_(ACTIVE_JOB_STATES),
+                            Order.state == OrderState.V1_RUNNING,
+                        ),
+                        and_(
+                            GradingJob.round_number == 2,
+                            GradingJob.state.in_(ACTIVE_JOB_STATES),
+                            Order.state == OrderState.V2_RUNNING,
+                        ),
+                    ),
+                )
+                .order_by(GradingJob.queued_at, GradingJob.id)
+                .limit(max(1, limit))
+            )
+            candidate_ids = list(
+                session.scalars(statement.with_only_columns(GradingJob.id)).all()
+            )
+            for job_id in candidate_ids:
+                job = lock_row(session, GradingJob, job_id)
+                if job is None or JobState(job.state) not in CANCELLABLE_JOB_STATES:
+                    continue
+                order = lock_row(session, Order, job.order_id)
+                if order is not None and self._job_matches_order(job, order):
+                    continue
+                if cancel_job(session, job, event_type="order_state_reconciled"):
+                    repaired += 1
+            session.commit()
+        return repaired
+
+    @staticmethod
+    def _job_matches_order(job: GradingJob, order: Order) -> bool:
+        expected = (
+            OrderState.V1_QUEUED
+            if job.round_number == 1 and job.state == JobState.QUEUED
+            else OrderState.V2_QUEUED
+            if job.round_number == 2 and job.state == JobState.QUEUED
+            else OrderState.V1_RUNNING
+            if job.round_number == 1 and job.state in ACTIVE_JOB_STATES
+            else OrderState.V2_RUNNING
+            if job.round_number == 2 and job.state in ACTIVE_JOB_STATES
+            else None
+        )
+        return expected is not None and OrderState(order.state) is expected
+
     @staticmethod
     def _clear_worker_job(
         session: Session,
@@ -461,20 +651,20 @@ class LeaseService:
 
     @staticmethod
     def _revert_order_to_queued(session: Session, job: GradingJob) -> None:
-        order = session.get(Order, job.order_id)
-        if order is None:
-            return
         queued = (
             OrderState.V1_QUEUED if job.round_number == 1 else OrderState.V2_QUEUED
         )
         running = (
             OrderState.V1_RUNNING if job.round_number == 1 else OrderState.V2_RUNNING
         )
-        if order.state == running:
-            # Not a modelled forward transition: the order is being rewound to
-            # the state it held before the failed claim, so assign directly.
-            order.state = queued
-            session.add(order)
+        # A refund may win while the ACK deadline is expiring.  Rewind only the
+        # exact running state created by this lease; never overwrite a newer
+        # refund/terminal decision from another transaction.
+        session.execute(
+            update(Order)
+            .where(Order.id == job.order_id, Order.state == running)
+            .values(state=queued)
+        )
 
     def get(self, job_id: str) -> GradingJob | None:
         with self._session_factory() as session:

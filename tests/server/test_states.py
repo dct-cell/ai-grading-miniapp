@@ -34,11 +34,13 @@ EXPECTED_JOB_EDGES = frozenset(
         (JobState.LEASED, JobState.RUNNING),
         (JobState.LEASED, JobState.QUEUED),
         (JobState.LEASED, JobState.WORKER_EXCEPTION),
+        (JobState.LEASED, JobState.CANCELLED),
         (JobState.RUNNING, JobState.UPLOADING),
         (JobState.RUNNING, JobState.WORKER_EXCEPTION),
         (JobState.RUNNING, JobState.CANCELLED),
         (JobState.UPLOADING, JobState.SUCCEEDED),
         (JobState.UPLOADING, JobState.WORKER_EXCEPTION),
+        (JobState.UPLOADING, JobState.CANCELLED),
     }
 )
 
@@ -82,7 +84,7 @@ def test_job_transition_graph_is_exact() -> None:
     )
 
     assert actual_edges == EXPECTED_JOB_EDGES
-    assert len(actual_edges) == 10
+    assert len(actual_edges) == 12
     assert JobState.SUCCEEDED not in JOB_TRANSITIONS
     assert JobState.WORKER_EXCEPTION not in JOB_TRANSITIONS
     assert JobState.CANCELLED not in JOB_TRANSITIONS

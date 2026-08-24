@@ -19,7 +19,8 @@ function json(body: unknown, status = 200) {
 }
 
 const SETTINGS = {
-  cents_per_page: 1000,
+  summary_cents_per_page: 100,
+  annotated_cents_per_page: 1000,
   max_pdf_pages: 30,
   max_pdf_bytes: 26214400,
   quote_ttl_seconds: 86400,
@@ -100,11 +101,17 @@ describe("SettingsPage", () => {
 
     renderPage(<SettingsPage />, transport);
     await screen.findByText("¥10.00 / 页");
-    await userEvent.type(screen.getByLabelText("新价格（分/页）"), "1200");
-    await userEvent.click(screen.getByRole("button", { name: "发布新价格版本" }));
+    await userEvent.type(
+      screen.getByLabelText("逐页精批新价格（分/页）"),
+      "1200",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "发布逐页精批价格" }),
+    );
 
     const published = calls.find((call) => call.url.includes("/price-rules"));
     expect(JSON.parse(String(published?.init.body))).toEqual({
+      service_tier: "annotated_review",
       cents_per_page: 1200,
     });
     expect(

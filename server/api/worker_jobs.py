@@ -5,10 +5,17 @@ import time
 
 import anyio.to_thread
 from fastapi import APIRouter, HTTPException, Header, Request, Response, status
+from fastapi.responses import StreamingResponse
 
-from server.api.dependencies import Settings
+from server.api.dependencies import DatabaseSession, Settings
 from server.api.worker_dependencies import CurrentWorker
-from server.schemas.heartbeats import AckRequest, LeaseStateView, RenewRequest
+from server.schemas.heartbeats import (
+    AckRequest,
+    JobFailureRequest,
+    JobFailureView,
+    LeaseStateView,
+    RenewRequest,
+)
 from server.schemas.worker_jobs import BundleFileView, TaskBundleView
 from server.services.bundle_downloads import (
     BundleDownloadError,
@@ -18,7 +25,7 @@ from server.services.bundle_downloads import (
     BundleTokenInvalid,
 )
 from server.services.leases import LeaseConflict, LeaseService, TaskBundle
-from server.services.workers import ACK_SECONDS, LEASE_SECONDS
+from server.services.workers import ACK_SECONDS, LEASE_SECONDS, record_heartbeat
 
 
 router = APIRouter(prefix="/worker/v1/jobs", tags=["worker-jobs"])
@@ -88,11 +95,19 @@ def _view(bundle: TaskBundle) -> TaskBundleView:
     response_model=TaskBundleView,
     responses={status.HTTP_204_NO_CONTENT: {"description": "队列中没有可领取的任务。"}},
 )
-async def lease_job(request: Request, worker: CurrentWorker):
+async def lease_job(
+    request: Request,
+    worker: CurrentWorker,
+    session: DatabaseSession,
+):
     """Claim at most one queued job, long-polling for up to 25 seconds."""
     service = LeaseService(request.app.state.session_factory)
     worker_id = worker.worker_id
     wait_seconds = parse_wait_seconds(request.headers.get("Prefer"))
+
+    # One write per long-poll request keeps an idle Worker online without the
+    # 1-second database churn that touching it inside try_lease would cause.
+    record_heartbeat(session, worker)
 
     deadline = time.monotonic() + wait_seconds
     while True:
@@ -155,6 +170,31 @@ def renew_job_lease(
     return _lease_state(job)
 
 
+@router.post("/{job_id}/fail", response_model=JobFailureView)
+def fail_job(
+    job_id: str,
+    payload: JobFailureRequest,
+    worker: CurrentWorker,
+    request: Request,
+) -> JobFailureView:
+    """End one fenced attempt without stopping the Worker daemon."""
+    try:
+        job = LeaseService(request.app.state.session_factory).fail_job(
+            job_id=job_id,
+            worker_id=worker.worker_id,
+            lease_version=payload.lease_version,
+            code=payload.code,
+            message=payload.message,
+        )
+    except LeaseConflict:
+        raise _LEASE_CONFLICT from None
+    return JobFailureView(
+        job_id=job.id,
+        state=job.state,
+        lease_version=job.lease_version,
+    )
+
+
 _BUNDLE_KINDS = {"source", "reference"}
 
 
@@ -198,7 +238,7 @@ async def download_bundle_file(
     request: Request,
     settings: Settings,
     x_download_token: str | None = Header(default=None, alias="X-Download-Token"),
-) -> Response:
+) -> StreamingResponse:
     """Stream one bundle PDF to a worker holding an active lease.
 
     Phase 04's one approved server-side exception: the worker downloads
@@ -241,18 +281,12 @@ async def download_bundle_file(
         finally:
             await anyio.to_thread.run_sync(handle.close)
 
-    return Response(
-        content=await _consume(stream_chunks()),
+    return StreamingResponse(
+        stream_chunks(),
         media_type="application/pdf",
         headers={
             "X-Content-SHA256": download.sha256,
             "X-Content-Length": str(download.size_bytes),
+            "Content-Length": str(download.size_bytes),
         },
     )
-
-
-async def _consume(aiter):
-    chunks: list[bytes] = []
-    async for chunk in aiter:
-        chunks.append(chunk)
-    return b"".join(chunks)

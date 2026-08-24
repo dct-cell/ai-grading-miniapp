@@ -1059,7 +1059,7 @@ def test_admin_routes_are_registered_in_production(tmp_path) -> None:
     assert "/admin/api/v1/refunds/{refund_id}/reject" in paths
     assert "/admin/api/v1/refunds/technical" in paths
     # The fake adapters remain gated.
-    assert "/api/v1/auth/login" not in paths
+    assert "/api/v1/auth/login" in paths
     assert "/callbacks/fake/pay" not in paths
 
 
@@ -1078,7 +1078,7 @@ def test_admin_routes_appear_in_the_production_openapi(tmp_path) -> None:
         documented = probe.get("/openapi.json").json()["paths"]
 
     assert "/admin/api/v1/refunds/{refund_id}/approve" in documented
-    assert "/api/v1/auth/login" not in documented
+    assert "/api/v1/auth/login" in documented
 
 
 def test_refund_errors_do_not_leak_amounts_or_ids(

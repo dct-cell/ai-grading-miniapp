@@ -22,6 +22,22 @@ class RenewRequest(BaseModel):
     phase: str | None = Field(default=None, max_length=64)
 
 
+class JobFailureRequest(BaseModel):
+    """A terminal Worker failure bound to the current fencing token."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lease_version: int = Field(ge=0)
+    code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    message: str = Field(default="", max_length=500)
+
+
+class JobFailureView(BaseModel):
+    job_id: str
+    state: str
+    lease_version: int
+
+
 class LeaseStateView(BaseModel):
     job_id: str
     state: str

@@ -28,7 +28,7 @@ export const PROFILES = Object.freeze({
   }),
   production: Object.freeze({
     name: "production",
-    baseUrl: "https://api.example.com",
+    baseUrl: "https://api.skyedumath.com",
     auth: "wechat",
     payment: "wechat",
   }),
@@ -65,9 +65,10 @@ function decodeLaunchValue(value) {
  * the caller explicitly selects `profile=device-debug`; it can never override
  * the production profile or be persisted in the default configuration.
  */
-export function resolveLaunchProfile(launchOptions = {}) {
+export function resolveLaunchProfile(launchOptions = {}, runtime = {}) {
   const query = launchOptions && launchOptions.query ? launchOptions.query : {};
-  const requested = query.profile || DEFAULT_PROFILE;
+  const requested =
+    query.profile || (runtime.envVersion === "release" ? "production" : DEFAULT_PROFILE);
   const suppliedDebugUrl = query.deviceApiBaseUrl;
 
   if (requested !== DEVICE_DEBUG_PROFILE) {

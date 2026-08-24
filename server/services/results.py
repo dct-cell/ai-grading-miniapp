@@ -9,14 +9,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import BinaryIO
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from server.adapters.files import FileStorageError, LocalFileStore
 from server.adapters.pdf import PdfValidationError, inspect_pdf
+from server.db_locking import lock_row
 from server.domain.states import (
     ORDER_TRANSITIONS,
     JobState,
@@ -34,7 +35,7 @@ from server.models import (
     WorkerEvent,
 )
 from server.services.files import FileState
-from server.services.leases import LeaseConflict, STARTED_JOB_STATES, _lock
+from server.services.leases import LeaseConflict, STARTED_JOB_STATES
 from server.services.grading_result_validation import (
     GradingResultInvalid,
     validate_staged_result,
@@ -78,6 +79,7 @@ class StagedResult:
     relative_path: str
     sha256: str
     size_bytes: int
+    already_staged: bool = False
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,10 @@ class ResultService:
     def _max_bytes(self, kind: ResultKind) -> int:
         return MAX_RESULT_JSON_BYTES if kind is ResultKind.JSON else self._max_pdf_bytes
 
+    def max_bytes(self, kind: ResultKind) -> int:
+        """Public receive limit used by the streaming HTTP adapter."""
+        return self._max_bytes(kind)
+
     def begin_uploads(
         self,
         *,
@@ -204,7 +210,7 @@ class ResultService:
     ) -> tuple[UploadGrant, ...]:
         """Move a running job to UPLOADING and issue its single-use tokens."""
         with self._session_factory() as session:
-            job = _lock(session, GradingJob, job_id)
+            job = lock_row(session, GradingJob, job_id)
             if (
                 job is None
                 or job.worker_id != worker_id
@@ -258,7 +264,7 @@ class ResultService:
             raise UploadNotAuthorized("上传凭证与该任务不匹配。")
 
         with self._session_factory() as session:
-            job = _lock(session, GradingJob, job_id)
+            job = lock_row(session, GradingJob, job_id)
             if (
                 job is None
                 or job.worker_id != worker_id
@@ -266,12 +272,26 @@ class ResultService:
                 or job.state != JobState.UPLOADING
             ):
                 raise LeaseConflict("批改任务不存在或租约已失效。")
-            owner_user_id = self._owner_of(session, job)
 
-            # Single use: a staged artefact of this kind for this fence already
-            # exists, so the token has been redeemed.
+            # SQLite has no row-level FOR UPDATE.  A guarded no-op update opens
+            # its write transaction before file I/O, while MySQL naturally
+            # serialises on the already-locked job row.
+            claimed = session.execute(
+                update(GradingJob)
+                .where(
+                    GradingJob.id == job.id,
+                    GradingJob.worker_id == worker_id,
+                    GradingJob.lease_version == job.lease_version,
+                    GradingJob.state == JobState.UPLOADING,
+                )
+                .values(state=JobState.UPLOADING)
+            )
+            if claimed.rowcount != 1:
+                session.rollback()
+                raise LeaseConflict("批改任务不存在或租约已失效。")
+
             existing = session.scalar(
-                select(FileObject.id).where(
+                select(FileObject).where(
                     FileObject.kind == kind,
                     FileObject.relative_path.like(
                         f"{RESULT_STAGING_DIRECTORY}/{job_id}/{job.lease_version}/%"
@@ -279,35 +299,60 @@ class ResultService:
                 )
             )
             if existing is not None:
-                raise LeaseConflict("该结果文件已上传。")
+                if existing.sha256 != declared_sha256.lower():
+                    session.rollback()
+                    raise LeaseConflict("该结果文件已以不同内容上传。")
+                if not self._store.resolve(existing.relative_path).is_file():
+                    session.delete(existing)
+                    session.flush()
+                else:
+                    session.commit()
+                    return StagedResult(
+                        file_id=existing.id,
+                        kind=kind,
+                        relative_path=existing.relative_path,
+                        sha256=existing.sha256,
+                        size_bytes=existing.size_bytes,
+                        already_staged=True,
+                    )
+
+            owner_user_id = self._owner_of(session, job)
             lease_version = job.lease_version
-
-        file_id = str(uuid4())
-        relative_path = _staged_relative_path(job_id, lease_version, kind, file_id)
-        try:
-            stored = self._store.put_at(
-                relative_path,
-                stream,
-                max_bytes=claims.get("max_bytes", self._max_bytes(kind)),
-            )
-        except FileStorageError as error:
-            self._store.delete(relative_path)
-            raise UploadRejected(str(error)) from None
-
-        if stored.sha256 != declared_sha256.lower():
-            self._store.delete(relative_path)
-            raise UploadRejected("上传内容的 SHA-256 与声明不一致。")
-        if kind is ResultKind.PDF:
-            try:
-                inspect_pdf(
-                    self._store.resolve(relative_path),
-                    max_pages=self._max_pdf_pages + 1,
+            file_id = str(
+                uuid5(
+                    NAMESPACE_URL,
+                    f"grader-result:{job_id}:{lease_version}:{kind}",
                 )
-            except PdfValidationError as error:
+            )
+            relative_path = _staged_relative_path(
+                job_id, lease_version, kind, file_id
+            )
+            try:
+                stored = self._store.put_at(
+                    relative_path,
+                    stream,
+                    max_bytes=claims.get("max_bytes", self._max_bytes(kind)),
+                )
+            except FileStorageError as error:
                 self._store.delete(relative_path)
+                session.rollback()
                 raise UploadRejected(str(error)) from None
 
-        with self._session_factory() as session:
+            if stored.sha256 != declared_sha256.lower():
+                self._store.delete(relative_path)
+                session.rollback()
+                raise UploadRejected("上传内容的 SHA-256 与声明不一致。")
+            if kind is ResultKind.PDF:
+                try:
+                    inspect_pdf(
+                        self._store.resolve(relative_path),
+                        max_pages=self._max_pdf_pages + 1,
+                    )
+                except PdfValidationError as error:
+                    self._store.delete(relative_path)
+                    session.rollback()
+                    raise UploadRejected(str(error)) from None
+
             record = FileObject(
                 id=file_id,
                 owner_user_id=owner_user_id,
@@ -365,7 +410,7 @@ class ResultService:
         intact and the retry succeeds.
         """
         with self._session_factory() as session:
-            job = _lock(session, GradingJob, job_id)
+            job = lock_row(session, GradingJob, job_id)
             if job is None or job.worker_id != worker_id:
                 raise LeaseConflict("批改任务不存在或租约已失效。")
             if job.lease_version != lease_version:
@@ -393,7 +438,7 @@ class ResultService:
             if round_record is None:
                 raise LeaseConflict("批改轮次不存在。")
 
-            order = _lock(session, Order, job.order_id)
+            order = lock_row(session, Order, job.order_id)
             delivered = (
                 OrderState.V1_DELIVERED
                 if job.round_number == 1

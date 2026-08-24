@@ -14,10 +14,8 @@ Checks
 ``server_auth``     the Worker control plane accepts the configured shared key
 ``workspace_write`` the configured workspace root is writable
 
-The default run never invokes the real grading runtime. ``--full`` adds
-a golden-PDF check that runs LegacyCodexRuntime against a checked-in
-fixture and validates schema, page count, score range and PDF
-renderability. CI runs the default path; ``--full`` is opt-in.
+The doctor never invokes the paid grading runtime; staging owns end-to-end
+golden runs so this command remains cheap and deterministic.
 """
 from __future__ import annotations
 
@@ -92,7 +90,11 @@ def _http_ping(config: WorkerSettings) -> bool:
     try:
         import anyio
 
-        return bool(anyio.run(WorkerClient(config).heartbeat))
+        async def ping() -> bool:
+            async with WorkerClient(config) as client:
+                return bool(await client.heartbeat())
+
+        return anyio.run(ping)
     except Exception:
         return False
 
@@ -113,17 +115,6 @@ def _skill_fonts_dir() -> Path:
     """Return the skill fonts directory the runtime copies at run time."""
     repo_root = Path(__file__).resolve().parents[2]
     return repo_root / ".agents" / "skills" / "olympiad-grader" / "assets" / "fonts"
-
-
-def _run_golden_pdf_check(config: WorkerSettings) -> CheckResult:
-    """Run the real runtime against the golden PDF.
-
-    Only invoked via ``doctor --full``. The default doctor run skips
-    this so CI does not depend on Codex or XeLaTeX being installed.
-    """
-    raise NotImplementedError(
-        "golden-PDF check is opt-in via `worker doctor --full`"
-    )
 
 
 @dataclass(frozen=True)
@@ -182,14 +173,8 @@ class Doctor:
     so the server can reject the shared key without granting a lease.
     """
 
-    def __init__(
-        self,
-        config: WorkerSettings,
-        *,
-        full: bool = False,
-    ) -> None:
+    def __init__(self, config: WorkerSettings) -> None:
         self._config = config
-        self._full = full
 
     def run(self) -> DoctorReport:
         report = DoctorReport()
@@ -205,14 +190,6 @@ class Doctor:
             except Exception as exc:  # noqa: BLE001 — doctor never raises
                 report.checks[name] = CheckResult(
                     name=name, ok=False, detail=f"check crashed: {exc}"
-                )
-        if self._full:
-            try:
-                golden = _run_golden_pdf_check(self._config)
-                report.checks["golden_pdf"] = golden
-            except NotImplementedError as exc:
-                report.checks["golden_pdf"] = CheckResult(
-                    name="golden_pdf", ok=False, detail=str(exc)
                 )
         return report
 

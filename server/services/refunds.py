@@ -38,6 +38,7 @@ from server.adapters.payments import (
     RefundFailed,
     RefundRequest,
 )
+from server.db_locking import lock_row
 from server.domain.refund_policy import (
     RefundFacts,
     RefundRoute,
@@ -116,17 +117,6 @@ class UserRefundMetrics:
     monthly_user_refund_count: int
     lifetime_paid_cents: int
     lifetime_user_refunded_cents: int
-
-
-def _lock(session: Session, model, primary_key: str):
-    """Take a row lock where the backend supports one.
-
-    Mirrors server.services.payments._lock. SQLite ignores FOR UPDATE and
-    serialises writers; MySQL issues a real SELECT ... FOR UPDATE.
-    """
-    if session.get_bind().dialect.name == "sqlite":
-        return session.get(model, primary_key)
-    return session.get(model, primary_key, with_for_update=True)
 
 
 def _month_start_utc(moment: datetime) -> datetime:
@@ -320,6 +310,7 @@ class RefundService:
                 return self._describe_locked(session, refund)
             if not succeeded:
                 refund.state = RefundState.REFUND_FAILED
+                refund.updated_at = moment
                 session.add(refund)
                 session.commit()
                 return self._describe_locked(session, refund)
@@ -349,6 +340,58 @@ class RefundService:
             session.commit()
             return self._describe_locked(session, refund)
 
+    def settle_notification(
+        self,
+        *,
+        external_refund_id: str,
+        succeeded: bool,
+        now: datetime | None = None,
+    ) -> RefundOutcome:
+        """Apply an authenticated provider refund notification idempotently."""
+        moment = now or datetime.now(timezone.utc)
+        with self._session_factory() as session:
+            refund_id = session.scalar(
+                select(Refund.id).where(
+                    Refund.external_refund_id == external_refund_id
+                )
+            )
+            if refund_id is None:
+                raise RefundNotFound(external_refund_id)
+            refund = lock_row(session, Refund, refund_id)
+            if refund.state == RefundState.REFUNDED:
+                return self._describe_locked(session, refund)
+            if refund.state not in EXECUTABLE_REFUND_STATES:
+                raise RefundNotDecidable(refund_id)
+            if not succeeded:
+                refund.state = RefundState.REFUND_FAILED
+                refund.updated_at = moment
+                session.add(refund)
+                session.commit()
+                return self._describe_locked(session, refund)
+
+            order = self._order_of(session, refund)
+            if OrderState(order.state) is not OrderState.REFUND_PENDING:
+                raise RefundNotDecidable(refund_id)
+            require_order_transition(OrderState(order.state), OrderState.REFUNDED)
+            moved = session.execute(
+                update(Order)
+                .where(
+                    Order.id == order.id,
+                    Order.state == OrderState.REFUND_PENDING,
+                )
+                .values(
+                    state=OrderState.REFUNDED,
+                    downloads_revoked_at=moment,
+                )
+            )
+            if moved.rowcount != 1:
+                session.rollback()
+                return self._describe(refund_id)
+            refund.state = RefundState.REFUNDED
+            session.add(refund)
+            session.commit()
+            return self._describe_locked(session, refund)
+
     def create_technical_refund(
         self,
         *,
@@ -367,7 +410,7 @@ class RefundService:
             # and lease services do. The compare-and-set below is what
             # guarantees correctness, but taking the lock first means a
             # competing user action waits rather than racing and losing.
-            order = _lock(session, Order, order_id)
+            order = lock_row(session, Order, order_id)
             if order is None:
                 raise RefundNotFound(order_id)
             payment = session.scalar(

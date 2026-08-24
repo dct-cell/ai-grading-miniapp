@@ -25,6 +25,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from server.db_locking import lock_row
 from server.domain.states import (
     JobState,
     OrderState,
@@ -39,6 +40,7 @@ from server.models import (
     QuoteSession,
     Refund,
 )
+from server.services.leases import CANCELLABLE_JOB_STATES, cancel_job
 from server.services.payments import PaymentState
 from server.services.refunds import (
     RefundSource,
@@ -129,17 +131,6 @@ def _after_state_check(action: str) -> None:
     """
 
 
-def _lock(session: Session, model, primary_key: str):
-    """Take a row lock where the backend supports one.
-
-    Mirrors server.services.payments._lock. SQLite ignores FOR UPDATE and
-    serialises writers; MySQL issues a real SELECT ... FOR UPDATE.
-    """
-    if session.get_bind().dialect.name == "sqlite":
-        return session.get(model, primary_key)
-    return session.get(model, primary_key, with_for_update=True)
-
-
 def _owned_order(session: Session, owner_user_id: str, order_id: str) -> Order:
     """Load an order the caller owns, or raise OrderNotAvailable.
 
@@ -153,10 +144,41 @@ def _owned_order(session: Session, owner_user_id: str, order_id: str) -> Order:
     )
     if owner is None or owner != owner_user_id:
         raise OrderNotAvailable(order_id)
-    order = _lock(session, Order, order_id)
+    order = lock_row(session, Order, order_id)
     if order is None:
         raise OrderNotAvailable(order_id)
     return order
+
+
+def _require_order_owner(session: Session, owner_user_id: str, order_id: str) -> None:
+    """Verify ownership without taking the Order lock.
+
+    Refunds may also cancel a Worker job.  They lock that Job before the Order,
+    matching result delivery and lease repair, so claim/refund cannot deadlock
+    by acquiring the same two rows in opposite order.
+    """
+    owner = session.scalar(
+        select(QuoteSession.owner_user_id)
+        .join(Order, Order.quote_session_id == QuoteSession.id)
+        .where(Order.id == order_id)
+    )
+    if owner is None or owner != owner_user_id:
+        raise OrderNotAvailable(order_id)
+
+
+def _lock_unfinished_job(session: Session, order_id: str) -> GradingJob | None:
+    statement = (
+        select(GradingJob)
+        .where(
+            GradingJob.order_id == order_id,
+            GradingJob.state.in_(CANCELLABLE_JOB_STATES),
+        )
+        .order_by(GradingJob.round_number.desc())
+        .limit(1)
+    )
+    if session.get_bind().dialect.name != "sqlite":
+        statement = statement.with_for_update()
+    return session.scalars(statement).first()
 
 
 def available_actions(
@@ -221,7 +243,7 @@ def _claim_transition(
     observed state means the loser updates zero rows and can be turned into a
     409.
 
-    The guard is required on both backends. ``_lock()`` degrades to no lock on
+    The guard is required on both backends. ``lock_row()`` degrades to no lock on
     SQLite, and pysqlite does not even open a transaction until the first DML,
     so the earlier SELECT provides no isolation there at all.
     """
@@ -360,7 +382,11 @@ def request_refund(
     from the request body.
     """
     moment = now or datetime.now(timezone.utc)
-    order = _owned_order(session, owner_user_id, order_id)
+    _require_order_owner(session, owner_user_id, order_id)
+    job = _lock_unfinished_job(session, order_id)
+    order = lock_row(session, Order, order_id)
+    if order is None:
+        raise OrderNotAvailable(order_id)
     _require_action(session, order, OrderAction.REFUND, moment)
     if OrderState(order.state) not in REFUNDABLE_STATES:
         raise ActionNotAllowed(_LOST_THE_RACE)
@@ -378,6 +404,9 @@ def request_refund(
     if not _claim_transition(session, order, OrderState.REFUND_PENDING):
         session.rollback()
         raise ActionNotAllowed(_LOST_THE_RACE)
+
+    if job is not None:
+        cancel_job(session, job, event_type="refund_cancelled")
 
     refund = Refund(
         payment_id=payment.id,

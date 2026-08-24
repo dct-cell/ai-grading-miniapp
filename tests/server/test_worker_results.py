@@ -153,24 +153,44 @@ def test_upload_tokens_are_bound_to_kind_and_size(uploading: dict) -> None:
         assert claims["worker_id"]
 
 
-def test_a_token_cannot_be_replayed(
+def test_a_lost_upload_response_can_be_replayed_idempotently(
     worker_client: TestClient,
     worker_a: str,
     uploading: dict,
     session_factory: sessionmaker[Session],
 ) -> None:
-    """Upload tokens are single-use."""
+    """Repeating the same fenced bytes returns the original staged file."""
     first = upload(worker_client, worker_a, uploading, ResultKind.JSON, RESULT_JSON)
     assert first.status_code == 201
 
     replay = upload(worker_client, worker_a, uploading, ResultKind.JSON, RESULT_JSON)
 
-    assert replay.status_code == 409
+    assert replay.status_code == 200
+    assert replay.json()["file_id"] == first.json()["file_id"]
     with session_factory() as session:
         staged = session.scalars(
             select(FileObject).where(FileObject.kind == ResultKind.JSON)
         ).all()
     assert len(staged) == 1
+
+
+def test_a_replayed_kind_with_different_bytes_is_rejected(
+    worker_client: TestClient,
+    worker_a: str,
+    uploading: dict,
+) -> None:
+    first = upload(worker_client, worker_a, uploading, ResultKind.JSON, RESULT_JSON)
+    assert first.status_code == 201
+
+    different = upload(
+        worker_client,
+        worker_a,
+        uploading,
+        ResultKind.JSON,
+        b'{"score": 20, "problems": []}',
+    )
+
+    assert different.status_code == 409
 
 
 def test_a_token_for_one_kind_cannot_upload_another(

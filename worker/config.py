@@ -31,6 +31,7 @@ MINIMUM_SHARED_KEY_CHARS = 32
 #: ``worker/`` must not depend on ``server/``.
 _SERVER_ENV_PREFIX = "grader_"
 _WORKER_ENV_PREFIX = "grader_worker_"
+_RETIRED_ENV_KEYS = frozenset({"grader_worker_max_codex_sessions_per_job"})
 
 
 def _drop_server_namespace(data: dict[Any, Any]) -> dict[Any, Any]:
@@ -47,8 +48,13 @@ def _drop_server_namespace(data: dict[Any, Any]) -> dict[Any, Any]:
         for key, value in data.items()
         if not (
             isinstance(key, str)
-            and key.lower().startswith(_SERVER_ENV_PREFIX)
-            and not key.lower().startswith(_WORKER_ENV_PREFIX)
+            and (
+                key.lower() in _RETIRED_ENV_KEYS
+                or (
+                    key.lower().startswith(_SERVER_ENV_PREFIX)
+                    and not key.lower().startswith(_WORKER_ENV_PREFIX)
+                )
+            )
         )
     }
 
@@ -95,20 +101,18 @@ class WorkerSettings(BaseSettings):
     worker_id: str | None = None
     workspace_root: Path
     device_name: str = Field(default="", max_length=128)
-    worker_version: str = "3.0.0"
+    worker_version: str = "3.1.0"
     # Production-safe default. The local demo constructs FakeGrader explicitly;
     # a deployed Worker must never silently deliver placeholder scoring.
     runtime_mode: Literal["fake", "codex"] = "codex"
     codex_bin: str = "codex"
     grading_timeout_seconds: int = Field(default=60 * 60, ge=60, le=2 * 60 * 60)
-    poll_wait_seconds: int = Field(default=25, ge=0, le=25)
+    poll_wait_seconds: int = Field(default=25, ge=1, le=25)
     renew_interval_seconds: int = Field(default=20, ge=1)
     request_timeout_seconds: float = Field(default=60.0, gt=0)
-    # Reserved for the Harness runtime (parallel subagents). The legacy
-    # Codex runtime is single-process and ignores this value; setting it
-    # wider than 1 only takes effect once a Harness implementation is
-    # wired up. Allowed range is 1..3 per the Phase 04 contract.
-    max_codex_sessions_per_job: int = Field(default=1, ge=1, le=3)
+    # One local process supervises this many independent server identities.
+    # Keeping one job per identity preserves the proven lease/fencing model.
+    max_concurrent_jobs: int = Field(default=1, ge=1, le=10)
 
     @model_validator(mode="before")
     @classmethod

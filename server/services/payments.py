@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from server.adapters.payments import PaymentGateway, PrepayRequest
+from server.db_locking import lock_row
 from server.domain.states import JobState, OrderState, require_order_transition
 from server.models import (
     FileObject,
@@ -17,6 +18,7 @@ from server.models import (
     Order,
     Payment,
     QuoteSession,
+    User,
 )
 from server.services.files import promote_to_retained
 
@@ -48,12 +50,6 @@ class PrepayIntent:
     client_payload: dict[str, str]
 
 
-def _lock(session: Session, model, primary_key: str):
-    if session.get_bind().dialect.name == "sqlite":
-        return session.get(model, primary_key)
-    return session.get(model, primary_key, with_for_update=True)
-
-
 def _require_payable(quote: QuoteSession) -> None:
     if quote.consumed_at is not None:
         raise QuoteNotPayable("该报价已经完成支付。")
@@ -77,6 +73,11 @@ def create_prepay(
     if quote is None:
         raise QuoteNotAvailable(quote_id)
     _require_payable(quote)
+    payer_openid = session.scalar(
+        select(User.openid).where(User.id == owner_user_id)
+    )
+    if not payer_openid:
+        raise QuoteNotPayable("用户微信身份不完整。")
 
     merchant_order_id = f"{quote.id[:8]}-{token_hex(8)}"
     result = gateway.create_prepay(
@@ -84,6 +85,7 @@ def create_prepay(
             merchant_order_id=merchant_order_id,
             amount_cents=quote.quoted_amount_cents,
             description="数学竞赛答卷批改",
+            payer_openid=payer_openid,
         )
     )
     payment = Payment(
@@ -116,7 +118,7 @@ def confirm_payment(
     Raises CallbackRejected when verification fails; the caller must not
     create any order in that case.
     """
-    payment = _lock(session, Payment, payment_id)
+    payment = lock_row(session, Payment, payment_id)
     if payment is None:
         raise PaymentNotFound(payment_id)
 
@@ -130,7 +132,7 @@ def confirm_payment(
             raise CallbackRejected("支付回调与已有支付记录不一致。")
         return order
 
-    quote = _lock(session, QuoteSession, payment.quote_session_id)
+    quote = lock_row(session, QuoteSession, payment.quote_session_id)
     if quote is None:
         raise CallbackRejected("报价不存在。")
     if quote.consumed_at is not None:
@@ -227,6 +229,26 @@ def confirm_by_transaction(
         payment_id=payment_id,
         external_transaction_id=external_transaction_id,
         paid_amount_cents=payment_amount,
+    )
+
+
+def confirm_by_merchant_order(
+    *,
+    session: Session,
+    merchant_order_id: str,
+    external_transaction_id: str,
+    paid_amount_cents: int,
+) -> Order:
+    payment_id = session.scalar(
+        select(Payment.id).where(Payment.merchant_order_id == merchant_order_id)
+    )
+    if payment_id is None:
+        raise PaymentNotFound(merchant_order_id)
+    return confirm_payment(
+        session=session,
+        payment_id=payment_id,
+        external_transaction_id=external_transaction_id,
+        paid_amount_cents=paid_amount_cents,
     )
 
 

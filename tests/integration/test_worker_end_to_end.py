@@ -29,6 +29,7 @@ from worker.client import WorkerClient
 from worker.config import WorkerSettings
 from worker.runtime.daemon import WorkerDaemon
 from worker.runtime.fake_grader import FakeGrader
+from worker.supervisor import poll_once, registered_lanes
 
 
 @pytest.fixture
@@ -67,7 +68,7 @@ def build_worker_client(app, settings, tmp_path: Path) -> WorkerClient:
         workspace_root=tmp_path / "worker-workspace",
         # Diagnostics and tests use Prefer: wait=0 so an empty queue answers at
         # once instead of holding the full 25-second long poll.
-        poll_wait_seconds=0,
+        poll_wait_seconds=1,
     )
     client = WorkerClient(worker_settings)
     transport = httpx.ASGITransport(app=app)
@@ -157,7 +158,7 @@ async def test_two_workers_deliver_two_orders_without_collision(
             shared_key=SHARED_KEY,
             installation_id=f"install-e2e-{index}",
             workspace_root=tmp_path / f"workspace-{index}",
-            poll_wait_seconds=0,
+            poll_wait_seconds=1,
         )
         worker_client = WorkerClient(worker_settings)
         transport = httpx.ASGITransport(app=client.app)
@@ -182,3 +183,55 @@ async def test_two_workers_deliver_two_orders_without_collision(
         jobs = session.scalars(select(GradingJob)).all()
     assert {job.state for job in jobs} == {JobState.SUCCEEDED}
     assert len({job.worker_id for job in jobs}) == 2
+
+
+@pytest.mark.anyio
+async def test_one_supervisor_runs_three_virtual_workers_in_parallel(
+    server,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = server
+    order_ids = [queue_paid_order(client) for _ in range(3)]
+    transport = httpx.ASGITransport(app=client.app)
+
+    def asgi_client(_self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            transport=transport,
+            base_url="http://127.0.0.1:8000",
+        )
+
+    monkeypatch.setattr(WorkerClient, "_client", asgi_client)
+    worker_settings = WorkerSettings(
+        server_base_url="http://127.0.0.1:8000",
+        shared_key=SHARED_KEY,
+        installation_id="install-supervisor",
+        worker_id="",
+        workspace_root=tmp_path / "parallel-workspaces",
+        poll_wait_seconds=1,
+        runtime_mode="fake",
+        max_concurrent_jobs=3,
+    )
+
+    async with registered_lanes(
+        worker_settings,
+        lambda lane_settings, worker_client: WorkerDaemon(
+            client=worker_client,
+            runtime=FakeGrader(),
+            workspace_root=lane_settings.workspace_root,
+        ),
+    ) as lanes:
+        assert await poll_once(lanes) == 3
+
+    assert {
+        client.get(f"/api/v1/orders/{order_id}").json()["state"]
+        for order_id in order_ids
+    } == {OrderState.V1_DELIVERED}
+    with client.app.state.session_factory() as session:
+        workers = session.scalars(
+            select(Worker).where(Worker.installation_id.like("install-supervisor%"))
+        ).all()
+        jobs = session.scalars(select(GradingJob)).all()
+    assert len(workers) == 3
+    assert {worker.capabilities["concurrency_slots"] for worker in workers} == {3}
+    assert len({job.worker_id for job in jobs}) == 3

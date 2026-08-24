@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import signal
 import sys
 from collections.abc import Sequence
 
@@ -9,9 +12,15 @@ from pydantic import ValidationError
 from worker.client import WorkerClient
 from worker.config import WorkerSettings
 from worker.runtime.daemon import WorkerDaemon
-from worker.runtime.doctor import CheckResult, Doctor
+from worker.runtime.doctor import Doctor
 from worker.runtime.fake_grader import FakeGrader
 from worker.runtime.legacy_codex import LegacyCodexRuntime
+from worker.supervisor import (
+    poll_once,
+    registered_lanes,
+    request_drain,
+    run_forever as run_fleet_forever,
+)
 
 
 COMMANDS = (
@@ -20,17 +29,17 @@ COMMANDS = (
     "run",
     "run-once",
     "status",
-    "drain",
 )
 
 _USAGE = "usage: python -m worker.cli {" + "|".join(COMMANDS) + "}"
 
 
 def _load_settings() -> WorkerSettings:
-    return WorkerSettings()
+    env_file = os.environ.get("GRADER_WORKER_ENV_FILE")
+    return WorkerSettings(_env_file=env_file or ".env")
 
 
-def _daemon(settings: WorkerSettings) -> WorkerDaemon:
+def _daemon(settings: WorkerSettings, client: WorkerClient | None = None) -> WorkerDaemon:
     runtime = (
         FakeGrader()
         if settings.runtime_mode == "fake"
@@ -41,7 +50,7 @@ def _daemon(settings: WorkerSettings) -> WorkerDaemon:
         )
     )
     return WorkerDaemon(
-        client=WorkerClient(settings),
+        client=client or WorkerClient(settings),
         runtime=runtime,
         workspace_root=settings.workspace_root,
         renew_interval_seconds=settings.renew_interval_seconds,
@@ -55,63 +64,110 @@ def _doctor(settings: WorkerSettings, argv: Sequence[str] | None = None) -> int:
     the eight capability checks. Returns 0 when every check passes and
     1 otherwise so installers and CI can gate on the exit code.
 
-    ``--full`` additionally runs the golden-PDF check that exercises the
-    real runtime end-to-end. The default run stays cheap so CI without
-    Codex or XeLaTeX installed can still validate the worker install.
+    The doctor stays cheap and deterministic; staging owns real golden runs.
     """
-    full = bool(argv and "--full" in argv)
+    if argv:
+        print(f"unknown doctor option: {argv[0]}", file=sys.stderr)
+        return 2
     print(f"server_base_url: {settings.server_base_url}")
     print(f"installation_id: {settings.installation_id}")
     print(f"worker_id: {settings.worker_id or '(unregistered)'}")
     print(f"workspace_root: {settings.workspace_root}")
     print(f"worker_version: {settings.worker_version}")
     print(f"shared_key: configured ({len(settings.shared_key)} chars, not shown)")
-    print(f"max_codex_sessions_per_job: {settings.max_codex_sessions_per_job}")
     print(f"runtime: {settings.runtime_mode}")
-    report = Doctor(settings, full=full).run()
+    print(f"max_concurrent_jobs: {settings.max_concurrent_jobs}")
+    report = Doctor(settings).run()
     print(report.to_human())
     if not report.ok:
         return 1
-    if full and not report.checks.get("golden_pdf", CheckResult("golden_pdf", True, "")).ok:
-        return 1
     return 0
+
+
+async def _register_async(settings: WorkerSettings) -> list[dict[str, object]]:
+    async with registered_lanes(settings, _daemon) as lanes:
+        return [lane.registration for lane in lanes]
 
 
 def _register(settings: WorkerSettings) -> int:
-    body = anyio.run(WorkerClient(settings).register)
-    print(f"worker_id: {body['worker_id']}")
-    print(f"heartbeat_interval_seconds: {body['heartbeat_interval_seconds']}")
-    print(f"lease_seconds: {body['lease_seconds']}")
+    bodies = anyio.run(_register_async, settings)
+    for index, body in enumerate(bodies, start=1):
+        print(f"slot_{index}_worker_id: {body['worker_id']}")
+    print(f"heartbeat_interval_seconds: {bodies[0]['heartbeat_interval_seconds']}")
+    print(f"lease_seconds: {bodies[0]['lease_seconds']}")
     return 0
+
+
+async def _status_async(settings: WorkerSettings) -> list[dict[str, object]]:
+    async with registered_lanes(settings, _daemon) as lanes:
+        statuses: list[dict[str, object] | None] = [None] * len(lanes)
+
+        async def heartbeat(position: int) -> None:
+            statuses[position] = await lanes[position].client.heartbeat(phase="idle")
+
+        async with anyio.create_task_group() as group:
+            for position in range(len(lanes)):
+                group.start_soon(heartbeat, position)
+        return [status for status in statuses if status is not None]
 
 
 def _status(settings: WorkerSettings) -> int:
-    body = anyio.run(WorkerClient(settings).heartbeat)
-    print(f"worker_id: {body['worker_id']}")
-    print(f"status: {body['status']}")
-    print(f"current_job_id: {body['current_job_id'] or '(idle)'}")
+    bodies = anyio.run(_status_async, settings)
+    for index, body in enumerate(bodies, start=1):
+        print(f"slot_{index}_worker_id: {body['worker_id']}")
+        print(f"slot_{index}_status: {body['status']}")
+        print(f"slot_{index}_current_job_id: {body['current_job_id'] or '(idle)'}")
     return 0
+
+
+async def _run_once_async(settings: WorkerSettings) -> int:
+    async with registered_lanes(settings, _daemon) as lanes:
+        return await poll_once(lanes)
 
 
 def _run_once(settings: WorkerSettings) -> int:
-    processed = anyio.run(_daemon(settings).run_one_poll)
-    print("processed one job" if processed else "no job was available")
+    processed = anyio.run(_run_once_async, settings)
+    print(
+        f"processed {processed} job(s) across {settings.max_concurrent_jobs} slot(s)"
+        if processed
+        else "no job was available"
+    )
     return 0
+
+
+async def _run_async(settings: WorkerSettings) -> None:
+    async with registered_lanes(settings, _daemon) as lanes:
+        loop = asyncio.get_running_loop()
+        running_task = asyncio.current_task()
+        signals = 0
+
+        def request_stop() -> None:
+            nonlocal signals
+            signals += 1
+            if signals == 1:
+                request_drain(lanes)
+            elif running_task is not None:
+                running_task.cancel()
+
+        installed: list[signal.Signals] = []
+        for name in ("SIGTERM", "SIGINT"):
+            sig = getattr(signal, name, None)
+            if sig is None:
+                continue
+            try:
+                loop.add_signal_handler(sig, request_stop)
+            except NotImplementedError:
+                continue
+            installed.append(sig)
+        try:
+            await run_fleet_forever(lanes)
+        finally:
+            for sig in installed:
+                loop.remove_signal_handler(sig)
 
 
 def _run(settings: WorkerSettings) -> int:
-    anyio.run(_daemon(settings).run_forever)
-    return 0
-
-
-def _drain(settings: WorkerSettings) -> int:
-    """Ask a running daemon to stop after its current job.
-
-    Phase 03 has no supervisor socket yet, so this reports intent rather than
-    signalling another process.
-    """
-    del settings
-    print("drain requested: the daemon stops polling after the current job")
+    anyio.run(_run_async, settings)
     return 0
 
 
@@ -137,7 +193,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "run": _run,
         "run-once": _run_once,
         "status": _status,
-        "drain": _drain,
     }
     return handlers[command](settings)
 

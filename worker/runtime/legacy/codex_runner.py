@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import shutil
 import sys
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ from .settings import Settings
 
 
 StatusCallback = Callable[..., Awaitable[None]]
+_PROCESS_LOG_TAIL_BYTES = 256 * 1024
+_PROCESS_PIPE_CHUNK_BYTES = 64 * 1024
 
 
 class CodexRunError(RuntimeError):
@@ -109,40 +112,76 @@ def is_transient_failure(output: str) -> bool:
     return any(marker in lowered for marker in TRANSIENT_MARKERS)
 
 
-def extract_failure_detail(stdout: bytes, stderr: bytes) -> str:
-    for raw_line in reversed(stdout.decode("utf-8", errors="replace").splitlines()):
-        try:
-            event = json.loads(raw_line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
-        candidates: list[Any] = [event.get("message")]
-        error = event.get("error")
-        if isinstance(error, dict):
-            candidates.append(error.get("message"))
-        elif isinstance(error, str):
-            candidates.append(error)
-        for candidate in candidates:
-            if isinstance(candidate, str) and candidate.strip():
-                cleaned = " ".join(candidate.split())
-                return cleaned[:240]
-
-    for line in reversed(stderr.decode("utf-8", errors="replace").splitlines()):
-        if line.strip():
-            return line.strip()[:240]
-    return ""
-
-
 async def _terminate_process(process: asyncio.subprocess.Process) -> None:
     if process.returncode is not None:
         return
-    process.terminate()
+    if os.name == "posix":
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    elif sys.platform == "win32":
+        killer = await asyncio.create_subprocess_exec(
+            "taskkill",
+            "/PID",
+            str(process.pid),
+            "/T",
+            "/F",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await killer.wait()
+    else:
+        process.terminate()
     try:
         await asyncio.wait_for(process.wait(), timeout=5)
     except asyncio.TimeoutError:
-        process.kill()
+        if os.name == "posix":
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
         await process.wait()
+
+
+def _process_group_kwargs() -> dict[str, Any]:
+    if os.name == "posix":
+        return {"start_new_session": True}
+    if sys.platform == "win32":
+        return {"creationflags": 0x00000200}  # CREATE_NEW_PROCESS_GROUP
+    return {}
+
+
+async def _pipe_to_log(
+    stream: asyncio.StreamReader | None,
+    path: Path,
+    tail: bytearray,
+) -> None:
+    """Drain a subprocess pipe to disk while retaining only a bounded tail."""
+    if stream is None:
+        return
+    output = None
+    try:
+        output = path.open("wb")
+    except OSError:
+        pass
+    try:
+        while chunk := await stream.read(_PROCESS_PIPE_CHUNK_BYTES):
+            if output is not None:
+                try:
+                    output.write(chunk)
+                except OSError:
+                    output.close()
+                    output = None
+            tail.extend(chunk)
+            overflow = len(tail) - _PROCESS_LOG_TAIL_BYTES
+            if overflow > 0:
+                del tail[:overflow]
+    finally:
+        if output is not None:
+            output.close()
 
 
 def _subprocess_env() -> dict[str, str]:
@@ -445,6 +484,23 @@ def _validate_grading_payload(
     return total, maximum_total, resolved_scope
 
 
+def _normalise_page_order(grading: dict[str, Any], path: Path) -> None:
+    """Persist the canonical page order expected by rendering and delivery."""
+    pages = grading.get("pages")
+    if not isinstance(pages, list):
+        return
+    ordered = sorted(pages, key=lambda page: int(page["page"]))
+    if ordered == pages:
+        return
+    grading["pages"] = ordered
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
+        json.dumps(grading, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
 def _load_manifest(
     path: Path, *, job_dir: Path, profile: dict[str, Any]
 ) -> dict[str, Any]:
@@ -461,9 +517,8 @@ def _load_manifest(
         raise CodexRunError("批改程序返回的 PDF 页数无效。", code="bad_manifest")
     if not isinstance(payload.get("summary"), str) or not payload["summary"].strip():
         raise CodexRunError("批改程序返回的批改摘要无效。", code="bad_manifest")
-    grading = _read_json_object(
-        job_dir / "output" / "grading.json", description="评分详情"
-    )
+    grading_path = job_dir / "output" / "grading.json"
+    grading = _read_json_object(grading_path, description="评分详情")
     schema = _read_json_object(
         job_dir / tier_profile["grading_schema"], description="评分契约"
     )
@@ -483,6 +538,8 @@ def _load_manifest(
     score, maximum, resolved_scope = _validate_grading_payload(
         grading, profile, expected_input_pages=input_info.page_count
     )
+    if profile["service_tier"] != "summary_report":
+        _normalise_page_order(grading, grading_path)
     try:
         validate_internal_analysis(
             job_dir,
@@ -718,12 +775,16 @@ async def _run_demo(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=_subprocess_env(),
+        **_process_group_kwargs(),
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
     except asyncio.TimeoutError as exc:
         await _terminate_process(process)
         raise CodexRunError("演示报告生成超时。", code="demo_timeout") from exc
+    except asyncio.CancelledError:
+        await _terminate_process(process)
+        raise
     if process.returncode != 0:
         raise CodexRunError("演示报告排版失败。", code="demo_failed")
     await status_callback(
@@ -805,6 +866,7 @@ async def run_codex_job(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_subprocess_env(),
+                **_process_group_kwargs(),
             )
         except OSError as exc:
             raise CodexRunError("无法启动批改组件。", code="codex_start_failed") from exc
@@ -820,16 +882,38 @@ async def run_codex_job(
             ),
             name=f"grading-stage-watcher-{job_dir.name}-{attempt}",
         )
+        stdout_tail = bytearray()
+        stderr_tail = bytearray()
+        stdout_task = asyncio.create_task(
+            _pipe_to_log(
+                process.stdout,
+                logs_dir / f"codex-attempt-{attempt}.jsonl",
+                stdout_tail,
+            ),
+            name=f"codex-stdout-{job_dir.name}-{attempt}",
+        )
+        stderr_task = asyncio.create_task(
+            _pipe_to_log(
+                process.stderr,
+                logs_dir / f"codex-attempt-{attempt}.stderr.log",
+                stderr_tail,
+            ),
+            name=f"codex-stderr-{job_dir.name}-{attempt}",
+        )
         try:
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(
-                        input=_build_grading_prompt(
-                            profile=profile,
-                            has_instructions=has_instructions,
-                            has_reference=(job_dir / "input" / "reference.pdf").is_file(),
-                        ).encode("utf-8")
-                    ),
+                assert process.stdin is not None
+                process.stdin.write(
+                    _build_grading_prompt(
+                        profile=profile,
+                        has_instructions=has_instructions,
+                        has_reference=(job_dir / "input" / "reference.pdf").is_file(),
+                    ).encode("utf-8")
+                )
+                await process.stdin.drain()
+                process.stdin.close()
+                await asyncio.wait_for(
+                    process.wait(),
                     timeout=settings.timeout_seconds,
                 )
             except asyncio.TimeoutError as exc:
@@ -844,11 +928,16 @@ async def run_codex_job(
                 raise
         finally:
             watcher_stop.set()
-            await asyncio.gather(watcher, return_exceptions=True)
+            await asyncio.gather(
+                watcher,
+                stdout_task,
+                stderr_task,
+                return_exceptions=True,
+            )
 
-        (logs_dir / f"codex-attempt-{attempt}.jsonl").write_bytes(stdout)
-        (logs_dir / f"codex-attempt-{attempt}.stderr.log").write_bytes(stderr)
-        last_output = (stdout + b"\n" + stderr).decode("utf-8", errors="replace")
+        last_output = (bytes(stdout_tail) + b"\n" + bytes(stderr_tail)).decode(
+            "utf-8", errors="replace"
+        )
 
         if process.returncode == 0:
             try:

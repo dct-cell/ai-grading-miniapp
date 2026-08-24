@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from server.adapters.factories import build_auth_provider, build_payment_gateway
 from server.api import (
     admin_auth,
     admin_operations,
@@ -35,6 +36,8 @@ FAKE_ADAPTER_ENVIRONMENTS = frozenset(
 
 def create_app(settings: ServerSettings) -> FastAPI:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    auth_provider = build_auth_provider(settings)
+    payment_gateway = build_payment_gateway(settings)
     session_factory = create_session_factory(settings.database_url)
     engine = cast(Engine, session_factory.kw["bind"])
 
@@ -43,6 +46,10 @@ def create_app(settings: ServerSettings) -> FastAPI:
         try:
             yield
         finally:
+            for adapter in (auth_provider, payment_gateway):
+                close = getattr(adapter, "close", None)
+                if callable(close):
+                    close()
             engine.dispose()
 
     app = FastAPI(
@@ -52,6 +59,8 @@ def create_app(settings: ServerSettings) -> FastAPI:
     )
     app.state.settings = settings
     app.state.session_factory = session_factory
+    app.state.auth_provider = auth_provider
+    app.state.payment_gateway = payment_gateway
 
     @app.get("/health/live")
     def live() -> dict[str, str]:
@@ -81,6 +90,7 @@ def create_app(settings: ServerSettings) -> FastAPI:
     app.include_router(workers.router)
     app.include_router(worker_jobs.router)
     app.include_router(worker_results.router)
+    app.include_router(callbacks.wechat_router)
     # The Admin console is likewise real in every environment: refund approvals
     # have to work in production. It authenticates with its own credential
     # domain — Argon2id passwords over opaque cookie sessions — not with a fake
@@ -91,8 +101,10 @@ def create_app(settings: ServerSettings) -> FastAPI:
     app.include_router(admin_refunds.router)
     app.include_router(admin_workers.router)
     # Fake auth and payment adapters must never be reachable in production.
-    if settings.environment in FAKE_ADAPTER_ENVIRONMENTS:
-        app.include_router(miniapp_auth.fake_router)
+    if (
+        settings.environment in FAKE_ADAPTER_ENVIRONMENTS
+        and not settings.wechat_live_mode
+    ):
         app.include_router(miniapp_payments.fake_router)
         app.include_router(callbacks.router)
 

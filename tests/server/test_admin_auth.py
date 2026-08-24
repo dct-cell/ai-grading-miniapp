@@ -335,6 +335,23 @@ class TestPasswordHandling:
         with pytest.raises(RateLimited):
             limiter.check("ops-admin", attacker)
 
+    def test_rate_limiter_key_space_is_bounded(self) -> None:
+        from server.services.admin_sessions import (
+            MAX_RATE_LIMIT_KEYS,
+            LoginRateLimiter,
+        )
+
+        limiter = LoginRateLimiter()
+        now = datetime.now(timezone.utc)
+        for index in range(MAX_RATE_LIMIT_KEYS + 10):
+            limiter.record_failure(
+                f"random-user-{index}",
+                f"203.0.113.{index}",
+                now=now,
+            )
+
+        assert len(limiter._failures) == MAX_RATE_LIMIT_KEYS  # noqa: SLF001
+
     def test_a_csrf_token_with_non_ascii_bytes_is_refused_not_a_crash(
         self,
         client: TestClient,
@@ -736,7 +753,8 @@ class TestRouteRegistration:
         assert "/admin/api/v1/refunds/{refund_id}/approve" in paths
         # Meanwhile the fake adapters must still be absent in production.
         assert not [path for path in paths if "simulate-success" in path]
-        assert not [path for path in paths if path.startswith("/callbacks/")]
+        assert "/callbacks/fake/pay" not in paths
+        assert "/callbacks/wechat/pay" in paths
 
     def test_no_error_response_leaks_a_secret(
         self,

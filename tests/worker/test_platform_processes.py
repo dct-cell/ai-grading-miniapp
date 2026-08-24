@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import platform
 import signal
 import subprocess
@@ -15,6 +16,10 @@ from worker.platforms import (
     LinuxPlatform,
     WindowsPlatform,
     current_platform,
+)
+from worker.runtime.legacy.codex_runner import (
+    _process_group_kwargs,
+    _terminate_process,
 )
 
 
@@ -106,6 +111,47 @@ class TestMacOSProcessTreeTermination:
                 adapter.terminate_tree(process, timeout_seconds=5)
             except Exception:
                 pass
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group integration")
+async def test_real_async_runner_termination_kills_grandchildren(tmp_path: Path) -> None:
+    marker = tmp_path / "grandchild.pid"
+    grandchild = tmp_path / "grandchild.py"
+    parent = tmp_path / "parent.py"
+    grandchild.write_text(
+        "import os, time\n"
+        f"open({str(marker)!r}, 'w').write(str(os.getpid()))\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    parent.write_text(
+        "import subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, {str(grandchild)!r}])\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(parent),
+        **_process_group_kwargs(),
+    )
+    try:
+        deadline = time.time() + 10
+        while not marker.is_file() and time.time() < deadline:
+            await asyncio.sleep(0.05)
+        assert marker.is_file()
+        grandchild_pid = int(marker.read_text())
+
+        await _terminate_process(process)
+
+        deadline = time.time() + 5
+        while _pid_alive(grandchild_pid) and time.time() < deadline:
+            await asyncio.sleep(0.05)
+        assert not _pid_alive(process.pid)
+        assert not _pid_alive(grandchild_pid)
+    finally:
+        await _terminate_process(process)
 
 
 @pytest.mark.skipif(platform.system() != "Linux", reason="Linux smoke test")

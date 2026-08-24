@@ -4,7 +4,7 @@
   "title": "数学竞赛题批改（金标准）",
   "total_score": 0,
   "max_score": 7,
-  "overall_summary": "Golden fixture used by `worker doctor --full` to validate the real runtime end-to-end. The expected fields mirror the result schema so a single jsonschema check covers both the manifest and grading payload.",
+  "overall_summary": "Golden fixture reserved for staging end-to-end validation. The expected fields mirror the result schema so one fixture covers the manifest and grading payload.",
   "problems": [
     {
       "label": "金标准题 1",

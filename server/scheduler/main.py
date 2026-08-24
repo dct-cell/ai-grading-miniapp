@@ -128,25 +128,32 @@ def main() -> None:  # pragma: no cover - process entry point
     """Start the scheduler, refusing to run if another already holds the lock."""
     from server.config import ServerSettings
     from server.db import create_session_factory
-    from server.adapters.payments import FakePaymentGateway
+    from server.adapters.factories import build_payment_gateway
 
     logging.basicConfig(level=logging.INFO)
     settings = ServerSettings()
     session_factory = create_session_factory(settings.database_url)
+    gateway = build_payment_gateway(settings)
     tasks = SchedulerTasks(
         session_factory,
         settings=settings,
-        gateway=FakePaymentGateway(),
+        gateway=gateway,
     )
-    lock = SchedulerLock(session_factory)
-    with lock.acquire() as acquired:
-        if not acquired:
-            logger.error(
-                "another scheduler already holds %s; exiting",
-                SCHEDULER_LOCK_NAME,
-            )
-            return
-        asyncio.run(scheduler_loop(tasks))
+    lock_name = f"{SCHEDULER_LOCK_NAME}:{settings.environment}"
+    lock = SchedulerLock(session_factory, name=lock_name)
+    try:
+        with lock.acquire() as acquired:
+            if not acquired:
+                logger.error(
+                    "another scheduler already holds %s; exiting",
+                    lock_name,
+                )
+                return
+            asyncio.run(scheduler_loop(tasks))
+    finally:
+        close = getattr(gateway, "close", None)
+        if callable(close):
+            close()
 
 
 if __name__ == "__main__":  # pragma: no cover

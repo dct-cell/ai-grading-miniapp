@@ -127,16 +127,14 @@ class RuntimeResult(BaseModel):
         if not json_path.is_file():
             raise ValueError("result JSON is missing")
 
-        json_bytes = json_path.read_bytes()
-        pdf_bytes = pdf_path.read_bytes()
         page_count = _manifest_page_count(manifest)
 
         return cls(
             manifest_path=manifest_path,
             result_json_path=json_path,
             result_pdf_path=pdf_path,
-            result_json_sha256=hashlib.sha256(json_bytes).hexdigest(),
-            result_pdf_sha256=hashlib.sha256(pdf_bytes).hexdigest(),
+            result_json_sha256=_sha256_path(json_path),
+            result_pdf_sha256=_sha256_path(pdf_path),
             output_page_count=page_count,
         )
 
@@ -179,3 +177,11 @@ def _manifest_page_count(manifest: dict[str, Any]) -> int:
     if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 1:
         raise ValueError("manifest page_count is not a positive integer")
     return page_count
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()

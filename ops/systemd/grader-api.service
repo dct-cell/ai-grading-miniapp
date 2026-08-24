@@ -1,0 +1,23 @@
+[Unit]
+Description=SkyEdu Math Grader API
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=grader
+Group=grader
+WorkingDirectory=/srv/grader/current
+EnvironmentFile=/etc/grader/grader.env
+ExecStart=/srv/grader/venv/bin/uvicorn server.entrypoint:app --host 127.0.0.1 --port 8101 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/grader-data /var/lib/grader-backup
+
+[Install]
+WantedBy=multi-user.target

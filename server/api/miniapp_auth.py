@@ -2,30 +2,25 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
-from server.adapters.auth import FakeAuthProvider
 from server.api.dependencies import CurrentUser, DatabaseSession
 from server.schemas.auth import LoginRequest, LoginResponse, UserView
 from server.services.sessions import LoginRejected, login
 
 
 router = APIRouter(prefix="/api/v1", tags=["miniapp-auth"])
-fake_router = APIRouter(prefix="/api/v1", tags=["miniapp-auth-fake"])
 
 
-@fake_router.post("/auth/login", response_model=LoginResponse)
+@router.post("/auth/login", response_model=LoginResponse)
 def login_with_code(
     payload: LoginRequest,
     session: DatabaseSession,
+    request: Request,
 ) -> LoginResponse:
-    """Test-account login. Never registered in production.
-
-    FakeAuthProvider accepts any `test-` prefixed code, so exposing this in
-    production would let anyone mint a session for an arbitrary identity.
-    """
+    """Exchange a fake development code or a real production wx.login code."""
     try:
-        issued = login(session, FakeAuthProvider(), payload.code)
+        issued = login(session, request.app.state.auth_provider, payload.code)
     except LoginRejected:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

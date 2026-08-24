@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,8 @@ from worker.config import WorkerSettings
 from worker.runtime.contracts import RuntimeResult, TaskBundle
 from worker.runtime.daemon import WorkerDaemon
 from worker.runtime.fake_grader import FakeGrader
+from worker.runtime.legacy_codex import RuntimeExecutionError
+from worker.supervisor import WorkerLane, derive_lane_settings, poll_once
 
 
 SHARED_KEY = "worker-shared-key-" + "w" * 32
@@ -39,6 +42,7 @@ class FakeServer:
         self.committed: dict[str, object] | None = None
         self.renewals = 0
         self.uploaded: dict[str, bytes] = {}
+        self.failures: list[dict[str, str]] = []
 
     async def lease(self, *, wait_seconds: int = 25) -> LeasedTask | None:
         del wait_seconds
@@ -76,6 +80,17 @@ class FakeServer:
         self.calls.append("commit")
         self.committed = dict(uploads)
         return {"status": "committed"}
+
+    async def fail_job(
+        self,
+        task: LeasedTask,
+        *,
+        code: str,
+        message: str = "",
+    ) -> dict:
+        self.calls.append("fail")
+        self.failures.append({"code": code, "message": message})
+        return {"state": "worker_exception"}
 
 
 def make_task(lease_version: int = 1) -> LeasedTask:
@@ -137,7 +152,7 @@ async def test_daemon_processes_exactly_one_lease(
 
     await worker_daemon.run_one_poll()
 
-    assert server.calls == ["lease", "download", "ack", "upload", "commit"]
+    assert server.calls == ["lease", "ack", "download", "upload", "commit"]
     assert not list(worker_daemon.workspace_root.iterdir())
 
 
@@ -193,12 +208,46 @@ async def test_the_workspace_is_removed_even_when_grading_fails(
         workspace_root=settings.workspace_root,
     )
 
-    with pytest.raises(RuntimeError, match="xelatex crashed"):
-        await worker_daemon.run_one_poll()
+    assert await worker_daemon.run_one_poll() is True
 
-    assert server.calls == ["lease", "download", "ack"]
+    assert server.calls == ["lease", "ack", "download", "fail"]
+    assert server.failures == [{"code": "worker_exception", "message": ""}]
     assert server.committed is None
     assert not list(worker_daemon.workspace_root.iterdir())
+
+
+@pytest.mark.anyio
+async def test_a_failed_job_does_not_stop_the_next_job(
+    settings: WorkerSettings,
+) -> None:
+    class FailsOnce(FakeGrader):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run(self, workspace: Path, bundle: TaskBundle, progress=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeExecutionError(
+                    "runtime_invalid_json",
+                    message="schema mismatch",
+                )
+            return await super().run(workspace, bundle, progress)
+
+    server = FakeServer(task=make_task())
+    worker_daemon = WorkerDaemon(
+        client=server,
+        runtime=FailsOnce(),
+        workspace_root=settings.workspace_root,
+    )
+
+    assert await worker_daemon.run_one_poll() is True
+    server.task = make_task(lease_version=2)
+    assert await worker_daemon.run_one_poll() is True
+
+    assert server.failures == [
+        {"code": "runtime_invalid_json", "message": "schema mismatch"}
+    ]
+    assert server.committed is not None
 
 
 @pytest.mark.anyio
@@ -347,6 +396,7 @@ def test_worker_settings_never_render_the_shared_key(tmp_path: Path) -> None:
         server_base_url="https://grader.example.com",
         shared_key=SHARED_KEY,
         installation_id="install-x",
+        worker_id="",
         workspace_root=tmp_path,
     )
 
@@ -378,6 +428,115 @@ def test_worker_settings_allow_plain_http_on_localhost(tmp_path: Path) -> None:
     assert settings.server_base_url == "http://127.0.0.1:8000"
 
 
+def test_worker_concurrency_is_configurable_up_to_ten(tmp_path: Path) -> None:
+    from pydantic import ValidationError
+
+    settings = WorkerSettings(
+        server_base_url="https://grader.example.com",
+        shared_key=SHARED_KEY,
+        installation_id="install-parallel",
+        worker_id="",
+        workspace_root=tmp_path,
+        max_concurrent_jobs=10,
+    )
+    assert settings.max_concurrent_jobs == 10
+
+    for invalid in (0, 11):
+        with pytest.raises(ValidationError):
+            WorkerSettings(
+                server_base_url="https://grader.example.com",
+                shared_key=SHARED_KEY,
+                installation_id="install-parallel",
+                worker_id="",
+                workspace_root=tmp_path,
+                max_concurrent_jobs=invalid,
+            )
+
+
+def test_parallel_lanes_have_stable_isolated_identities(tmp_path: Path) -> None:
+    settings = WorkerSettings(
+        server_base_url="https://grader.example.com",
+        shared_key=SHARED_KEY,
+        installation_id="i" * 64,
+        worker_id="worker-existing",
+        workspace_root=tmp_path / "workspace",
+        max_concurrent_jobs=4,
+    )
+
+    first = derive_lane_settings(settings)
+    second = derive_lane_settings(settings)
+
+    assert first == second
+    assert [lane.settings.worker_id for lane in first] == [
+        "worker-existing",
+        None,
+        None,
+        None,
+    ]
+    assert len({lane.settings.installation_id for lane in first}) == 4
+    assert all(len(lane.settings.installation_id) <= 64 for lane in first)
+    assert len({lane.settings.workspace_root for lane in first}) == 4
+    assert [lane.settings.workspace_root.name for lane in first] == [
+        "lane-01",
+        "lane-02",
+        "lane-03",
+        "lane-04",
+    ]
+
+
+@pytest.mark.anyio
+async def test_supervisor_polls_ten_jobs_concurrently(
+    settings: WorkerSettings,
+) -> None:
+    import anyio
+
+    class ConcurrentGrader(FakeGrader):
+        active = 0
+        peak = 0
+
+        async def run(self, workspace: Path, bundle: TaskBundle, progress=None):
+            type(self).active += 1
+            type(self).peak = max(type(self).peak, type(self).active)
+            try:
+                await anyio.sleep(0.05)
+                return await super().run(workspace, bundle, progress)
+            finally:
+                type(self).active -= 1
+
+    lanes = []
+    for index in range(10):
+        task = replace(
+            make_task(),
+            job_id=f"job-{index + 1}",
+            order_id=f"order-{index + 1}",
+        )
+        server = FakeServer(task=task)
+        lane_settings = settings.model_copy(
+            update={"workspace_root": settings.workspace_root / f"lane-{index + 1:02d}"}
+        )
+        daemon = WorkerDaemon(
+            client=server,
+            runtime=ConcurrentGrader(),
+            workspace_root=lane_settings.workspace_root,
+        )
+        lanes.append(
+            WorkerLane(
+                index=index + 1,
+                total=10,
+                settings=lane_settings,
+                client=server,
+                daemon=daemon,
+                registration={"worker_id": f"worker-{index + 1}"},
+            )
+        )
+
+    processed = await poll_once(tuple(lanes))
+
+    assert processed == 10
+    assert ConcurrentGrader.peak == 10
+    assert all(lane.client.committed is not None for lane in lanes)
+
+
 def test_the_client_sends_the_shared_key_and_worker_id(tmp_path: Path) -> None:
     settings = WorkerSettings(
         server_base_url="https://grader.example.com",
@@ -398,6 +557,7 @@ def test_the_client_omits_the_worker_id_before_registration(tmp_path: Path) -> N
         server_base_url="https://grader.example.com",
         shared_key=SHARED_KEY,
         installation_id="install-x",
+        worker_id="",
         workspace_root=tmp_path,
     )
 
@@ -415,7 +575,6 @@ def test_the_cli_exposes_the_documented_commands() -> None:
         "run",
         "run-once",
         "status",
-        "drain",
     }
 
 

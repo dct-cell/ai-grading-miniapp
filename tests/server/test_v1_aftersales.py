@@ -307,7 +307,43 @@ def test_refund_is_allowed_while_still_grading(
     assert response.status_code in {200, 202}, response.text
     with session_factory() as session:
         order = session.get(Order, order_id)
+        job = session.scalar(
+            select(GradingJob).where(GradingJob.order_id == order_id)
+        )
     assert order.state in {OrderState.REFUND_PENDING, OrderState.REFUNDED}
+    assert job.state == JobState.CANCELLED
+    assert job.ack_deadline is None
+    assert job.lease_expires_at is None
+
+
+def test_refunded_queued_job_cannot_block_the_next_order(
+    authenticated_client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    first_order = pay_for_new_order(authenticated_client)
+    second_order = pay_for_new_order(authenticated_client)
+    refunded = authenticated_client.post(
+        f"/api/v1/orders/{first_order}/refund",
+        json={"reason": "uploaded_wrong_pdf"},
+    )
+    assert refunded.status_code in {200, 202}, refunded.text
+
+    worker_id = register_worker(
+        authenticated_client,
+        installation_id="install-after-queued-refund",
+    )["worker_id"]
+    leased = authenticated_client.post(
+        "/worker/v1/jobs/lease",
+        headers={**worker_headers(worker_id), "Prefer": "wait=0"},
+    )
+
+    assert leased.status_code == 200, leased.text
+    assert leased.json()["order_id"] == second_order
+    with session_factory() as session:
+        first_job = session.scalar(
+            select(GradingJob).where(GradingJob.order_id == first_order)
+        )
+    assert first_job.state == JobState.CANCELLED
 
 
 def test_actions_are_rejected_after_the_acceptance_deadline(
