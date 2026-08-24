@@ -42,7 +42,6 @@
           "score": {"type": "integer", "minimum": 0},
           "max_score": {"type": "integer", "minimum": 0},
           "page_summary": {"type": "string"},
-          "verdict": {"type": "string"},
           "findings": {
             "type": "array",
             "items": {

@@ -119,6 +119,33 @@ def test_info_abbreviation_is_rejected(builder: ModuleType) -> None:
         )
 
 
+def test_problem_verdict_only_renders_on_its_last_page(builder: ModuleType) -> None:
+    payload = grading([
+        page(1, "第 1 题", ("correct",)),
+        page(2, "第 1 题", ("correct",)),
+    ])
+    payload["problems"] = [{
+        "label": "第 1 题",
+        "score": 6,
+        "max_score": 7,
+        "summary": "整题总结只在末页出现。",
+    }]
+    with source_document(2) as source:
+        resolved = builder.validate_and_resolve_grading(payload, source)
+        tex = builder.build_tex_document(
+            source, payload, {"grading_standard": "imo"}, resolved
+        )
+
+    cover, first_page, last_page = tex.split("\n\\clearpage\n")
+    assert "判分结论" not in first_page
+    assert "整题总结只在末页出现" not in first_page
+    assert "6 / 7" in first_page
+    assert "判分结论" in last_page
+    assert "整题总结只在末页出现" in last_page
+    assert "6 / 7" in last_page
+    assert "判分结论" not in cover
+
+
 def test_ambiguous_normalized_problem_labels_are_rejected(
     builder: ModuleType,
 ) -> None:

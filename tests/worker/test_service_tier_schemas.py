@@ -144,3 +144,10 @@ def test_annotated_schema_accepts_public_math_fields_and_informational_kind() ->
         "formula": r"a^2+b^2=c^2",
     }]
     _validator("annotated-grading.schema.json").validate(grading)
+
+
+def test_annotated_schema_rejects_page_level_verdict() -> None:
+    grading = annotated_grading()
+    grading["pages"][0]["verdict"] = "不应在每页重复整题结论。"
+    with pytest.raises(jsonschema.ValidationError):
+        _validator("annotated-grading.schema.json").validate(grading)

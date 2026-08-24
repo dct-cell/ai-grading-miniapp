@@ -570,7 +570,7 @@ def validate_and_resolve_grading(
                 f"pages[{page_position}].problem {page_problem!r} does not match "
                 "exactly one problems[].label after NFKC and whitespace normalization"
             )
-        for optional_field in ("page_summary", "verdict"):
+        for optional_field in ("page_summary",):
             if page_data.get(optional_field):
                 mixed_tex(
                     page_data.get(optional_field),
@@ -674,7 +674,9 @@ def problem_card_tex(problem: dict[str, Any], index: int) -> str:
         "已完成检查。",
         field_name=f"problems[{index}].summary",
     )
-    score = escape_tex_plain(score_text(problem.get("score"), problem.get("max_score")))
+    score = escape_tex_plain(
+        score_text(problem.get("score"), problem.get("max_score"))
+    )
     return rf"""
 \begin{{tcolorbox}}[
   enhanced,colback={style['fill']},colframe={style['accent']}!25,
@@ -792,16 +794,14 @@ def finding_panel_tex(finding: dict[str, Any], field_name: str) -> str:
 """
 
 
-def verdict_panel_tex(page_data: dict[str, Any], page_number: int) -> str:
-    verdict = text(page_data.get("verdict"))
-    if not verdict:
-        return ""
-    style_key = score_style(page_data.get("score"), page_data.get("max_score"))
+def verdict_panel_tex(problem: dict[str, Any], problem_index: int) -> str:
+    verdict = text(problem.get("summary"), "已完成整题检查。")
+    style_key = score_style(problem.get("score"), problem.get("max_score"))
     style = STYLES[style_key]
     verdict_value = mixed_tex(
-        verdict, field_name=f"pages[{page_number}].verdict"
+        verdict, field_name=f"problems[{problem_index}].summary"
     )
-    score = escape_tex_plain(score_text(page_data.get("score"), page_data.get("max_score")))
+    score = escape_tex_plain(score_text(problem.get("score"), problem.get("max_score")))
     return rf"""
 \begin{{tcolorbox}}[
   enhanced,colback={style['fill']},colframe={style['accent']}!28,
@@ -832,7 +832,7 @@ def empty_page_panel_tex(page_data: dict[str, Any], page_number: int) -> str:
   left=3mm,right=3mm,top=2.4mm,bottom=2.7mm,boxsep=0mm,
   toptitle=1.8mm,bottomtitle=1.6mm,
   before skip=0mm,after skip=3.2mm,
-  title={{\sffamily\fontsize{{10.8}}{{14}}\selectfont 本页结论}}
+  title={{\sffamily\fontsize{{10.8}}{{14}}\selectfont 本页说明}}
 ]
 {{\fontsize{{10.2}}{{15.5}}\selectfont\color{{ink}} {summary}}}
 \end{{tcolorbox}}
@@ -874,6 +874,9 @@ def spread_tex(
     source: fitz.Document,
     source_index: int,
     page_data: dict[str, Any],
+    problem_data: dict[str, Any],
+    problem_index: int,
+    is_problem_last_page: bool,
     total_output_pages: int,
     footer: str,
 ) -> str:
@@ -885,8 +888,12 @@ def spread_tex(
         f"第 {page_number} 页批改",
         field_name=f"pages[{page_number}].problem",
     )
-    score = escape_tex_plain(score_text(page_data.get("score"), page_data.get("max_score")))
-    badge_style = score_style(page_data.get("score"), page_data.get("max_score"))
+    score = escape_tex_plain(
+        score_text(problem_data.get("score"), problem_data.get("max_score"))
+    )
+    badge_style = score_style(
+        problem_data.get("score"), problem_data.get("max_score")
+    )
     findings = page_data.get("_findings") or []
     markers = "\n".join(marker_tex(source_rect, finding) for finding in findings)
     if findings:
@@ -898,7 +905,8 @@ def spread_tex(
         )
     else:
         panels = empty_page_panel_tex(page_data, page_number)
-    panels += verdict_panel_tex(page_data, page_number)
+    if is_problem_last_page:
+        panels += verdict_panel_tex(problem_data, problem_index)
     return rf"""
 \thispagestyle{{empty}}
 \begin{{tikzpicture}}[remember picture,overlay]
@@ -1003,12 +1011,28 @@ def build_tex_document(
     total_output_pages = source.page_count + 1
     footer = grading_footer(profile, grading)
     pages = [cover_tex(grading, footer)]
+    problems = grading.get("problems") or []
+    problem_by_key = {
+        problem_label_key(text(problem.get("label"), f"第 {index} 题")): (index, problem)
+        for index, problem in enumerate(problems, start=1)
+    }
+    last_page_by_problem: dict[str, int] = {}
+    for page_number, page_data in page_map.items():
+        key = page_data["_problem_key"]
+        last_page_by_problem[key] = max(page_number, last_page_by_problem.get(key, 0))
     for source_index in range(source.page_count):
+        page_number = source_index + 1
+        page_data = page_map[page_number]
+        problem_key = page_data["_problem_key"]
+        problem_index, problem_data = problem_by_key[problem_key]
         pages.append(
             spread_tex(
                 source,
                 source_index,
-                page_map.get(source_index + 1, {}),
+                page_data,
+                problem_data,
+                problem_index,
+                page_number == last_page_by_problem[problem_key],
                 total_output_pages,
                 footer,
             )

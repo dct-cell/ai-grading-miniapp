@@ -112,7 +112,6 @@ Keep the entry prompt lean; this reference is the grading contract.
       "score": 6,
       "max_score": 7,
       "page_summary": "本页主体推导正确。",
-      "verdict": "核心方法成立，局部缺口影响完整性。",
       "findings": [
         {
           "id": 1,
@@ -128,6 +127,12 @@ Keep the entry prompt lean; this reference is the grading contract.
   ]
 }
 ```
+
+For `annotated_review`, `problems[].summary` is the whole-problem judgment. The
+report repeats the problem score badge on every submitted page assigned to that
+problem, but renders the `判分结论` panel only on the last such page. Keep
+`pages[].page_summary` local to its source page and do not add a page-level
+`verdict`.
 
 For `summary_report`, use exactly the following public structure and do not add
 `pages`, public findings, source quotes, or bboxes:
