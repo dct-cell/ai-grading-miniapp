@@ -128,6 +128,16 @@ one indivisible unit under the selected profile:
 - League: four slots for a 40-point problem or five slots for a 50-point problem,
   ten points each.
 
+Build the scheme from the problem's explicit obligations even when no complete
+reference solution is available; absence of a reference must not stop grading.
+Every slot must represent a concrete, independently checkable mathematical
+achievement, not effort, length, a method name, a guessed answer, a few examples,
+or a bound that is merely close. Separate genuinely independent obligations such
+as necessity/sufficiency or bound/construction, but do not turn consecutive steps
+of one dependency chain into freely additive parts. In each checkpoint description,
+state what must minimally be established, allow stronger or functionally equivalent
+results, and identify the common near-miss that is still insufficient.
+
 Equivalent approaches may have different checkpoints with the same `slot_id`.
 Only one checkpoint in a slot can earn that unit. Dependencies state mathematical
 prerequisites and may reference either a specific checkpoint ID (`p1-u1-main`) or
@@ -256,6 +266,25 @@ Give exactly one verification entry for every proof-map step. Verdicts are
 or `global`. A root error may affect several later steps; those later entries point
 to the same `root_error_id` rather than creating duplicate errors.
 
+Use the following compact domain checks only where relevant; they are questions to
+verify, not automatic deductions:
+
+- Algebra: domain and sign conditions, reversible transformations, parameter
+  boundaries, equality cases and attainability.
+- Geometry: existence and branch of constructed objects, theorem hypotheses, and
+  translation of coordinate/vector calculations back to the requested geometry;
+  a diagram does not prove an unstated metric fact.
+- Number theory: integrality and positivity, gcd conditions for cancellation or
+  modular inverses, exceptional primes, and closure of necessity and sufficiency.
+- Combinatorics: precise counted objects, no omission or double counting,
+  construction constraints, and whether invariants or strategies cover every
+  legal operation.
+
+An omitted derivation remains `valid` only when it is routine and uniquely
+recoverable from the written route. If completing it needs a new lemma, major case,
+construction argument or technique, mark it `unsupported`; never supply that work
+on the student's behalf.
+
 ```json
 {
   "analysis_version": 1,
@@ -298,6 +327,13 @@ in `root_error_impacts`; its withheld slots must not also be awarded.
 `initial_score` preserves the score before the skeptical review. The checkpoint
 mapping and `final_score` contain the reviewed decision. If a listed cap applies,
 the final score is the smaller of earned units and the strictest applied cap.
+
+Before totaling a problem, distinguish two cases. If a core checkpoint or major
+obligation is missing, award only slots supported by verified evidence. If the core
+argument and all major obligations are present and every defect is repairable
+locally along the student's existing route, reduce from the full applicable score
+by the profile's scoring units. Do not combine these two calculations, and do not
+remove independent valid work merely because another branch contains a root error.
 
 ```json
 {
