@@ -169,6 +169,8 @@ closing summary.
 
 ## Source locations and TeX
 
+- Every annotated finding `kind` is exactly one of `correct`, `informational`,
+  `warning`, or `error`; use `informational`, never the abbreviation `info`.
 - `page` is one-based. Prefer an exact, unique `source_quote`; otherwise provide a
   normalized `bbox` or `bboxes`. Tight rectangles cover one sentence, formula, or
   local part of a step; separated locations use the same finding with `bboxes`.

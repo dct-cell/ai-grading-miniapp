@@ -110,6 +110,15 @@ def test_unknown_page_problem_is_rejected(builder: ModuleType) -> None:
         )
 
 
+def test_info_abbreviation_is_rejected(builder: ModuleType) -> None:
+    with source_document(1) as source, pytest.raises(
+        ValueError, match="correct, informational, warning, or error"
+    ):
+        builder.validate_and_resolve_grading(
+            grading([page(1, "第 1 题", ("info",))]), source
+        )
+
+
 def test_ambiguous_normalized_problem_labels_are_rejected(
     builder: ModuleType,
 ) -> None:

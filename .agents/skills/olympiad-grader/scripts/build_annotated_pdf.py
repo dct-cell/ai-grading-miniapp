@@ -47,14 +47,13 @@ STYLES = {
         "head": "errorhead",
         "label": "扣分点",
     },
-    "info": {
+    "informational": {
         "accent": "info",
         "fill": "infofill",
         "head": "infohead",
         "label": "补充说明",
     },
 }
-STYLES["informational"] = STYLES["info"]
 
 SAFE_MATH_ENVIRONMENTS = frozenset(
     {
@@ -588,7 +587,7 @@ def validate_and_resolve_grading(
             kind = text(finding.get("kind"), "warning")
             if kind not in STYLES:
                 raise ValueError(
-                    f"{field_name}.kind must be correct, info, warning, or error"
+                    f"{field_name}.kind must be correct, informational, warning, or error"
                 )
             mixed_tex(
                 finding.get("title"),
@@ -854,7 +853,7 @@ def marker_tex(
         top = source_y + y0 * source_height
         right = source_x + x1 * source_width
         bottom = source_y + y1 * source_height
-        if kind not in ("correct", "info", "informational"):
+        if kind not in ("correct", "informational"):
             commands.append(
                 rf"\draw[{accent},rounded corners=.6mm,line width=.52mm] "
                 rf"{page_point(left, top)} rectangle {page_point(right, bottom)};"
