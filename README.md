@@ -116,6 +116,43 @@ GRADER_WORKER_RUNTIME_MODE=codex
 
 非本机服务地址强制使用 HTTPS。`runtime_mode=fake` 仅用于演示和测试，真实交付必须使用 `codex`。
 
+## 不启动 Server 的本地批改
+
+`grader-local` 直接复用同一套 workspace、Codex runner、评分 Skill、Schema 校验和 PDF 构建器，
+但不启动 Server、scheduler 或 Worker daemon，也不执行注册、租约和结果上传。
+
+安装或更新 editable 环境后，可以直接批改一份 PDF：
+
+```bash
+.venv/bin/grader-local /绝对路径/答卷.pdf \
+  --standard imo \
+  --tier annotated_review
+```
+
+常用选择：
+
+```bash
+# 简明评分
+.venv/bin/grader-local /绝对路径/答卷.pdf \
+  --standard cmo --tier summary_report
+
+# 带参考答案的联赛批改；league-scope 默认也是 auto
+.venv/bin/grader-local /绝对路径/答卷.pdf \
+  --reference /绝对路径/参考答案.pdf \
+  --standard league_second_round --league-scope auto
+
+# 不调用 Codex，只检查本地目录和报告生成链路
+.venv/bin/grader-local /绝对路径/答卷.pdf \
+  --standard imo --demo
+```
+
+默认结果位于 `tmp/local-grading/<run-name>/`，其中包含最终 PDF、`grading.json`、
+`manifest.json`、内部评分记录和运行日志；`tmp/` 已被 Git 忽略。成功后会删除每次复制的
+Skill、字体和 QA 临时图，使用 `--keep-transient` 可保留它们。失败现场始终保留以便诊断。
+
+`--note` 非空时，现有 runner 会启用受限网页搜索，只用于核对公开题面、来源、官方评分标准
+或可靠解答；默认空值完全禁用网页搜索。使用 `--json` 可输出便于脚本消费的结果路径。
+
 ## 前端
 
 - 微信小程序的导入、测试和真机验收说明见 [`miniapp/README.md`](miniapp/README.md)。

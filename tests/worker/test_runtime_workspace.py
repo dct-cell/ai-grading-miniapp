@@ -267,6 +267,7 @@ class TestWorkspaceCleanup:
         # The skill copy is removed once grading is done; the source stays in
         # the worker's own .agents directory for the next job.
         assert not skill_copy.exists()
+        assert not (workspace / ".agents").exists()
 
     def test_cleanup_is_idempotent_on_missing_workspace(
         self, tmp_path: Path

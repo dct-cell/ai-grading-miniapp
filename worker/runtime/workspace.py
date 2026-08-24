@@ -121,6 +121,15 @@ def cleanup_transient_artifacts(workspace: Path) -> None:
     skill_copy = workspace / WORKSPACE_LAYOUT.skill_dir
     if skill_copy.is_dir():
         shutil.rmtree(skill_copy, ignore_errors=True)
+    # Local one-shot runs retain the workspace after success. Remove only the
+    # now-empty Skill parents so those runs do not leave a misleading
+    # ``.agents/skills`` shell; rmdir is intentionally a no-op if another
+    # workspace Skill is present.
+    for parent in (skill_copy.parent, skill_copy.parent.parent):
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
 
 
 def _copy_pdf(bundle_path: str, dest: Path, *, description: str) -> None:

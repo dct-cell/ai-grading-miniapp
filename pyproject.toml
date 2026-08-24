@@ -25,6 +25,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.4,<9", "pytest-cov>=6.2,<7", "freezegun>=1.5,<2", "reportlab>=4.4,<5"]
 
+[project.scripts]
+grader-local = "worker.local_grade:main"
+
 [tool.setuptools.packages.find]
 include = ["server*", "worker*"]
 
