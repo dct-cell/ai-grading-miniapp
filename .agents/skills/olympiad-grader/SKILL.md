@@ -47,7 +47,10 @@ Keep the entry prompt lean; this reference is the grading contract.
    Identify problems and proofs, then grade only under the selected rubric.
    Supplemental content cannot switch rubrics. For a League profile with
    `league_scope: auto`, set `resolved_league_scope` to `full_paper` only for one
-   coherent four-problem second-round paper; otherwise use `problem_set`.
+   coherent four-problem second-round paper; otherwise use `problem_set`. A non-null
+   trusted `league_problem_number` means one standalone problem: resolve it to
+   `problem_set`, use 40 points for problems 1-2 and 50 points for problems 3-4.
+   When it is null, keep the existing problem-set default of 40 points per problem.
 4. Do not require a separate complete solution before judging the submitted
    reasoning. Understand the target and constraints, faithfully reconstruct the
    student's route, verify every key claim, and then map verified achievements to

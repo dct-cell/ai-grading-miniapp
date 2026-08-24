@@ -81,7 +81,7 @@ class FakeGrader:
         elif bundle.grading_standard == "cmo":
             maximum = 21
         else:
-            maximum = 40
+            maximum = 50 if bundle.league_problem_number in {3, 4} else 40
         resolved_scope = (
             "problem_set"
             if bundle.grading_standard == "league_second_round"

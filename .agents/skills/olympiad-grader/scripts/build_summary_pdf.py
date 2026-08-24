@@ -52,6 +52,10 @@ def standard_label(profile: dict[str, Any], grading: dict[str, Any]) -> str:
         return "CMO 21 分制"
     if grading["resolved_league_scope"] == "full_paper":
         return "联赛二试 · 整卷 180 分"
+    problem_number = profile.get("league_problem_number")
+    if problem_number is not None:
+        maximum = 50 if problem_number in {3, 4} else 40
+        return f"联赛二试 · 第 {problem_number} 题 {maximum} 分"
     return "联赛二试 · 题组每题 40 分"
 
 

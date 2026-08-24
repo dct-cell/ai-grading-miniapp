@@ -179,6 +179,44 @@ class TestLegacyRuntimeDemoMode:
         assert result.output_page_count == 5
 
     @pytest.mark.anyio
+    async def test_league_problem_three_demo_uses_50_point_maximum(
+        self, tmp_path: Path
+    ) -> None:
+        bundle = _bundle(
+            grading_standard="league_second_round",
+            league_scope="problem_set",
+            league_problem_number=3,
+        )
+        workspace = _stage_workspace(tmp_path, bundle)
+        runtime = LegacyCodexRuntime(runner_mode="demo")
+
+        result = await runtime.run(workspace, bundle, AsyncMock())
+
+        grading = json.loads(result.result_json_path.read_text(encoding="utf-8"))
+        assert grading["resolved_league_scope"] == "problem_set"
+        assert grading["total_score"] == 50
+        assert grading["max_score"] == 50
+        assert grading["problems"][0]["max_score"] == 50
+
+    @pytest.mark.anyio
+    async def test_league_problem_set_without_number_defaults_to_40(
+        self, tmp_path: Path
+    ) -> None:
+        bundle = _bundle(
+            grading_standard="league_second_round",
+            league_scope="problem_set",
+        )
+        workspace = _stage_workspace(tmp_path, bundle)
+        runtime = LegacyCodexRuntime(runner_mode="demo")
+
+        result = await runtime.run(workspace, bundle, AsyncMock())
+
+        grading = json.loads(result.result_json_path.read_text(encoding="utf-8"))
+        assert grading["total_score"] == 40
+        assert grading["max_score"] == 40
+        assert grading["problems"][0]["max_score"] == 40
+
+    @pytest.mark.anyio
     async def test_summary_demo_builds_a4_tex_report(self, tmp_path: Path) -> None:
         from pypdf import PdfReader
 

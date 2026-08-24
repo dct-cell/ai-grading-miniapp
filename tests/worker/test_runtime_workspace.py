@@ -93,6 +93,7 @@ class TestWorkspaceLayout:
         )
         assert profile["grading_standard"] == "imo"
         assert profile["league_scope"] is None
+        assert profile["league_problem_number"] is None
 
     def test_prepare_workspace_writes_league_profile_with_scope(
         self, tmp_path: Path
@@ -109,6 +110,23 @@ class TestWorkspaceLayout:
         )
         assert profile["grading_standard"] == "league_second_round"
         assert profile["league_scope"] == "full_paper"
+        assert profile["league_problem_number"] is None
+
+    def test_prepare_workspace_writes_trusted_league_problem_number(
+        self, tmp_path: Path
+    ) -> None:
+        source = _stage_pdf(tmp_path)
+        bundle = downloaded_bundle_with(
+            source_pdf=str(source),
+            grading_standard="league_second_round",
+            league_scope="problem_set",
+            league_problem_number=3,
+        )
+        workspace = prepare_workspace(tmp_path / "ws", bundle)
+        profile = json.loads(
+            (workspace / "config/grading-profile.json").read_text(encoding="utf-8")
+        )
+        assert profile["league_problem_number"] == 3
 
     def test_prepare_workspace_copies_manifest_schema(
         self, tmp_path: Path, downloaded_bundle: TaskBundle

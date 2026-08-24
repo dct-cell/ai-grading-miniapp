@@ -141,6 +141,11 @@ GRADER_WORKER_RUNTIME_MODE=codex
   --reference /绝对路径/参考答案.pdf \
   --standard league_second_round --league-scope auto
 
+# 联赛第 3 题单题：满分 50；不写题号时单题默认 40
+.venv/bin/grader-local /绝对路径/答卷.pdf \
+  --standard league_second_round --league-scope problem_set \
+  --league-problem-number 3
+
 # 不调用 Codex，只检查本地目录和报告生成链路
 .venv/bin/grader-local /绝对路径/答卷.pdf \
   --standard imo --demo

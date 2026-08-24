@@ -53,6 +53,7 @@ class TaskBundle(BaseModel):
     service_tier: Literal["summary_report", "annotated_review"]
     grading_standard: Literal["league_second_round", "cmo", "imo"]
     league_scope: Literal["auto", "full_paper", "problem_set"] | None = None
+    league_problem_number: Literal[1, 2, 3, 4] | None = None
     source_pdf: str
     reference_pdf: str | None = None
     page_count: int = Field(ge=1)
@@ -70,6 +71,17 @@ class TaskBundle(BaseModel):
         if self.grading_standard != "league_second_round" and self.league_scope is not None:
             raise ValueError(
                 "league_scope may only be set for league_second_round"
+            )
+        if (
+            self.grading_standard != "league_second_round"
+            and self.league_problem_number is not None
+        ):
+            raise ValueError(
+                "league_problem_number may only be set for league_second_round"
+            )
+        if self.league_scope == "full_paper" and self.league_problem_number is not None:
+            raise ValueError(
+                "league_problem_number is only valid for a standalone League problem"
             )
         return self
 

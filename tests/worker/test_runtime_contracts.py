@@ -90,6 +90,26 @@ class TestTaskBundleContract:
                 league_scope=None,
             )
 
+    def test_league_problem_number_is_accepted_for_problem_set(self) -> None:
+        bundle = _make_bundle(
+            grading_standard="league_second_round",
+            league_scope="problem_set",
+            league_problem_number=3,
+        )
+        assert bundle.league_problem_number == 3
+
+    def test_league_problem_number_is_rejected_for_non_league(self) -> None:
+        with pytest.raises(ValidationError):
+            _make_bundle(league_problem_number=3)
+
+    def test_league_problem_number_is_rejected_for_full_paper(self) -> None:
+        with pytest.raises(ValidationError):
+            _make_bundle(
+                grading_standard="league_second_round",
+                league_scope="full_paper",
+                league_problem_number=3,
+            )
+
     def test_zero_page_count_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
             _make_bundle(page_count=0)

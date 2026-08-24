@@ -177,6 +177,7 @@ def _write_grading_profile(workspace: Path, bundle: TaskBundle) -> None:
         "grading_standard": bundle.grading_standard,
         "grading_standard_label": _STANDARD_LABELS[bundle.grading_standard],
         "league_scope": bundle.league_scope,
+        "league_problem_number": bundle.league_problem_number,
     }
     profile_path = workspace / WORKSPACE_LAYOUT.grading_profile
     profile_path.parent.mkdir(parents=True, exist_ok=True)

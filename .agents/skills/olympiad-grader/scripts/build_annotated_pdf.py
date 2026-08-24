@@ -193,11 +193,20 @@ def load_profile(path: Path) -> dict[str, Any]:
     if standard not in GRADING_STANDARDS:
         raise ValueError("grading profile has an unsupported grading_standard")
     scope = profile.get("league_scope")
+    problem_number = profile.get("league_problem_number")
     if standard == "league_second_round":
         if scope not in LEAGUE_SCOPES:
             raise ValueError("League grading profile has an invalid league_scope")
-    elif scope is not None:
-        raise ValueError("only a League grading profile may set league_scope")
+        if problem_number is not None and (
+            isinstance(problem_number, bool)
+            or not isinstance(problem_number, int)
+            or problem_number not in {1, 2, 3, 4}
+        ):
+            raise ValueError("League grading profile has an invalid problem number")
+        if scope == "full_paper" and problem_number is not None:
+            raise ValueError("a full League paper cannot set a standalone problem number")
+    elif scope is not None or problem_number is not None:
+        raise ValueError("only a League grading profile may set League options")
     return profile
 
 
@@ -210,6 +219,10 @@ def _integer_score(value: Any, field_name: str) -> int:
     return int(numeric)
 
 
+def league_problem_maximum(profile: dict[str, Any]) -> int:
+    return 50 if profile.get("league_problem_number") in {3, 4} else 40
+
+
 def grading_footer(profile: dict[str, Any], grading: dict[str, Any]) -> str:
     standard = profile["grading_standard"]
     if standard == "imo":
@@ -219,6 +232,10 @@ def grading_footer(profile: dict[str, Any], grading: dict[str, Any]) -> str:
     scope = grading["resolved_league_scope"]
     if scope == "full_paper":
         return "数学竞赛题批改 · 联赛二试 · 整卷 180 分"
+    problem_number = profile.get("league_problem_number")
+    maximum = league_problem_maximum(profile)
+    if problem_number is not None:
+        return f"数学竞赛题批改 · 联赛二试 · 第 {problem_number} 题 {maximum} 分"
     return "数学竞赛题批改 · 联赛二试 · 题组每题 40 分"
 
 
@@ -250,12 +267,16 @@ def validate_grading_profile(
         expected_maxima = [21] * len(problems)
         increment = 3
     elif resolved_scope == "full_paper":
+        if profile.get("league_problem_number") is not None:
+            raise ValueError("standalone League problem number conflicts with full paper")
         if len(problems) != 4:
             raise ValueError("a full League paper must contain exactly four problems")
         expected_maxima = [40, 40, 50, 50]
         increment = 10
     else:
-        expected_maxima = [40] * len(problems)
+        if profile.get("league_problem_number") is not None and len(problems) != 1:
+            raise ValueError("a selected League problem number requires one problem")
+        expected_maxima = [league_problem_maximum(profile)] * len(problems)
         increment = 10
 
     scores: list[int] = []

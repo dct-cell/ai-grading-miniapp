@@ -74,6 +74,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="League-only scope; defaults to auto for league_second_round",
     )
     parser.add_argument(
+        "--league-problem-number",
+        type=int,
+        choices=(1, 2, 3, 4),
+        help=(
+            "trusted standalone League problem number; problems 3-4 use 50 "
+            "points, otherwise the problem-set default is 40"
+        ),
+    )
+    parser.add_argument(
         "--note",
         default="",
         help=(
@@ -166,10 +175,19 @@ def build_plan(args: argparse.Namespace) -> LocalGradingPlan:
 
     if args.standard == "league_second_round":
         league_scope = args.league_scope or "auto"
+        if league_scope == "full_paper" and args.league_problem_number is not None:
+            raise LocalGradeUsageError(
+                "--league-problem-number cannot be used with --league-scope full_paper"
+            )
     else:
         if args.league_scope is not None:
             raise LocalGradeUsageError(
                 "--league-scope may only be used with --standard league_second_round"
+            )
+        if args.league_problem_number is not None:
+            raise LocalGradeUsageError(
+                "--league-problem-number may only be used with "
+                "--standard league_second_round"
             )
         league_scope = None
 
@@ -188,6 +206,7 @@ def build_plan(args: argparse.Namespace) -> LocalGradingPlan:
         service_tier=args.tier,
         grading_standard=args.standard,
         league_scope=league_scope,
+        league_problem_number=args.league_problem_number,
         source_pdf=str(submission),
         reference_pdf=str(reference) if reference is not None else None,
         page_count=submission_info.page_count,
@@ -252,6 +271,7 @@ def _result_payload(plan: LocalGradingPlan, result: RuntimeResult) -> dict[str, 
         "service_tier": plan.bundle.service_tier,
         "grading_standard": plan.bundle.grading_standard,
         "league_scope": plan.bundle.league_scope,
+        "league_problem_number": plan.bundle.league_problem_number,
         "demo": plan.runner_mode == "demo",
     }
 

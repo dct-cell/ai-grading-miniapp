@@ -37,6 +37,7 @@ def test_build_plan_defaults_to_annotated_imo(tmp_path: Path) -> None:
     assert plan.bundle.service_tier == "annotated_review"
     assert plan.bundle.grading_standard == "imo"
     assert plan.bundle.league_scope is None
+    assert plan.bundle.league_problem_number is None
     assert plan.bundle.page_count == 1
     assert plan.workspace == (tmp_path / "runs" / "case-1").resolve()
     assert plan.runner_mode == "real"
@@ -60,11 +61,43 @@ def test_league_defaults_to_auto_scope(tmp_path: Path) -> None:
     plan = local_grade.build_plan(args)
 
     assert plan.bundle.league_scope == "auto"
+    assert plan.bundle.league_problem_number is None
+
+
+def test_league_problem_three_selects_trusted_50_point_profile(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path, "--league-problem-number", "3")
+    args.standard = "league_second_round"
+
+    plan = local_grade.build_plan(args)
+
+    assert plan.bundle.league_scope == "auto"
+    assert plan.bundle.league_problem_number == 3
 
 
 def test_non_league_rejects_league_scope(tmp_path: Path) -> None:
     with pytest.raises(local_grade.LocalGradeUsageError, match="league-scope"):
         local_grade.build_plan(_args(tmp_path, "--league-scope", "problem_set"))
+
+
+def test_non_league_rejects_league_problem_number(tmp_path: Path) -> None:
+    with pytest.raises(local_grade.LocalGradeUsageError, match="league-problem-number"):
+        local_grade.build_plan(_args(tmp_path, "--league-problem-number", "3"))
+
+
+def test_full_paper_rejects_league_problem_number(tmp_path: Path) -> None:
+    args = _args(
+        tmp_path,
+        "--league-scope",
+        "full_paper",
+        "--league-problem-number",
+        "3",
+    )
+    args.standard = "league_second_round"
+
+    with pytest.raises(local_grade.LocalGradeUsageError, match="full_paper"):
+        local_grade.build_plan(args)
 
 
 def test_rejects_existing_run_directory(tmp_path: Path) -> None:

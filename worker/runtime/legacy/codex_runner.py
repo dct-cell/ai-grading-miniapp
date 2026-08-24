@@ -314,6 +314,7 @@ def _load_profile(path: Path) -> dict[str, Any]:
     service_tier = profile.get("service_tier")
     standard = profile.get("grading_standard")
     scope = profile.get("league_scope")
+    problem_number = profile.get("league_problem_number")
     if service_tier not in SERVICE_TIER_PROFILES:
         raise CodexRunError("服务档位未正确配置。", code="configuration_error")
     expected_mode = (
@@ -326,9 +327,21 @@ def _load_profile(path: Path) -> dict[str, Any]:
     if standard == "league_second_round":
         if scope not in LEAGUE_SCOPES:
             raise CodexRunError("联赛评分范围未正确配置。", code="configuration_error")
-    elif scope is not None:
-        raise CodexRunError("当前赛制不应设置联赛范围。", code="configuration_error")
+        if problem_number is not None and (
+            isinstance(problem_number, bool)
+            or not isinstance(problem_number, int)
+            or problem_number not in {1, 2, 3, 4}
+        ):
+            raise CodexRunError("联赛单题题号未正确配置。", code="configuration_error")
+        if scope == "full_paper" and problem_number is not None:
+            raise CodexRunError("完整联赛卷不应设置单题题号。", code="configuration_error")
+    elif scope is not None or problem_number is not None:
+        raise CodexRunError("当前赛制不应设置联赛配置。", code="configuration_error")
     return profile
+
+
+def _league_problem_maximum(profile: dict[str, Any]) -> int:
+    return 50 if profile.get("league_problem_number") in {3, 4} else 40
 
 
 def _integer_score(value: Any, field_name: str) -> int:
@@ -370,11 +383,16 @@ def _validate_grading_payload(
     elif standard == "cmo":
         maxima, increment = [21] * len(problems), 3
     elif resolved_scope == "full_paper":
+        if profile.get("league_problem_number") is not None:
+            raise CodexRunError("联赛单题题号与整卷结果冲突。", code="bad_manifest")
         if len(problems) != 4:
             raise CodexRunError("完整联赛卷必须包含四题。", code="bad_manifest")
         maxima, increment = [40, 40, 50, 50], 10
     else:
-        maxima, increment = [40] * len(problems), 10
+        if profile.get("league_problem_number") is not None and len(problems) != 1:
+            raise CodexRunError("指定联赛题号时必须只批改一道题。", code="bad_manifest")
+        maxima = [_league_problem_maximum(profile)] * len(problems)
+        increment = 10
 
     scores: list[int] = []
     for index, (problem, expected_maximum) in enumerate(
@@ -615,7 +633,7 @@ async def _run_demo(
     elif profile["league_scope"] == "full_paper":
         resolved_scope, maxima = "full_paper", [40, 40, 50, 50]
     else:
-        resolved_scope, maxima = "problem_set", [40]
+        resolved_scope, maxima = "problem_set", [_league_problem_maximum(profile)]
     total_score = sum(maxima)
     common = {
         "service_tier": tier,
