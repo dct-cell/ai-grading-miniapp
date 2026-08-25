@@ -33,6 +33,17 @@ export function createOrderService({ api }) {
     get(orderId) {
       return api.get(`/api/v1/orders/${orderId}`);
     },
+
+    progress(orderIds) {
+      const ids = Array.from(new Set(orderIds || [])).slice(0, 50);
+      if (ids.length === 0) {
+        return Promise.resolve({ items: [] });
+      }
+      const query = ids
+        .map(orderId => `order_ids=${encodeURIComponent(orderId)}`)
+        .join("&");
+      return api.get(`/api/v1/orders/progress?${query}`);
+    },
   };
 }
 
@@ -103,6 +114,70 @@ export function createOrderPoller({
     if (timerId !== null) {
       // Clearing the timer is the point: leaving it armed would keep polling
       // after onHide/onUnload.
+      clearTimer(timerId);
+      timerId = null;
+    }
+  }
+
+  return {
+    start,
+    stop,
+    isRunning: () => running,
+    hasPendingTimer: () => timerId !== null,
+  };
+}
+
+/** A visibility-scoped polling loop for the compact task-list status payload. */
+export function createOrderProgressPoller({
+  fetchProgress,
+  onUpdate,
+  onError,
+  intervalMs = POLL_INTERVAL_MS,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+}) {
+  let timerId = null;
+  let running = false;
+
+  function schedule() {
+    if (running) {
+      timerId = setTimer(tick, intervalMs);
+    }
+  }
+
+  async function tick() {
+    timerId = null;
+    if (!running) {
+      return;
+    }
+    try {
+      const progress = await fetchProgress();
+      if (!running) {
+        return;
+      }
+      onUpdate(progress);
+    } catch (error) {
+      if (!running) {
+        return;
+      }
+      if (typeof onError === "function") {
+        onError(error);
+      }
+    }
+    schedule();
+  }
+
+  function start() {
+    if (running) {
+      return;
+    }
+    running = true;
+    schedule();
+  }
+
+  function stop() {
+    running = false;
+    if (timerId !== null) {
       clearTimer(timerId);
       timerId = null;
     }

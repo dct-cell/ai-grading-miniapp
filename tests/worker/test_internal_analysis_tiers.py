@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from worker.runtime.legacy.codex_runner import _build_grading_prompt
+from worker.runtime.legacy.codex_runner import (
+    _build_grading_prompt,
+    _build_validation_repair_prompt,
+)
 from worker.runtime.legacy.internal_analysis import (
     InternalAnalysisValidationError,
     validate_internal_analysis,
@@ -216,6 +219,9 @@ def test_summary_prompt_forbids_location_work_but_keeps_mathematical_checks() ->
     assert "疑似笔误须按字面写法" in prompt
     assert "发现一个错误后仍须检查" in prompt
     assert "扣分只作用于实际受影响的评分点" in prompt
+    assert "完整依赖链" in prompt
+    assert "具体评分点 ID 依赖" in prompt
+    assert "不得为通过校验而删除或弱化依赖" in prompt
 
 
 def test_annotated_prompt_retains_selective_location_work() -> None:
@@ -227,3 +233,15 @@ def test_annotated_prompt_retains_selective_location_work() -> None:
 
     assert "真正需要核对的位置" in prompt
     assert "内部证据均不做页内定位" not in prompt
+
+
+def test_validation_repair_prompt_is_bounded_and_preserves_dependencies() -> None:
+    prompt = _build_validation_repair_prompt(
+        "评分点 p1-u6-main 在依赖未满足时被计分。"
+    )
+
+    assert "不得从头重新批改" in prompt
+    assert "p1-u6-main" in prompt
+    assert "不得删除、弱化或改写数学依赖" in prompt
+    assert "评分槽位 ID 依赖" in prompt
+    assert "同步重建 grading.json、报告 PDF" in prompt

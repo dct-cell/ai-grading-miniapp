@@ -124,6 +124,30 @@ test("the detail page stops polling in both onHide and onUnload", () => {
   assert.match(detail, /onUnload\(\)\s*\{[^}]*stopPolling/);
 });
 
+test("the task list also stops progress polling when it is hidden or unloaded", () => {
+  const list = read("pages/orders/index.js");
+  assert.match(list, /onHide\(\)\s*\{[^}]*stopProgressPolling/);
+  assert.match(list, /onUnload\(\)\s*\{[^}]*stopProgressPolling/);
+  assert.match(list, /createOrderProgressPoller/);
+});
+
+test("grading progress uses transform-only breathing with reduced-motion fallback", () => {
+  const motion = read("styles/progress-motion.wxss");
+  const tokens = read("app.wxss");
+  const row = read("components/order-row/index.wxml");
+  const detail = read("pages/orders/detail.wxml");
+
+  assert.match(tokens, /--motion-breathe:\s*1800ms/);
+  assert.match(tokens, /--ease-in-out:\s*cubic-bezier\(0\.77, 0, 0\.175, 1\)/);
+  assert.match(motion, /scale\(0\.8\)/);
+  assert.match(motion, /scale\(1\.14\)/);
+  assert.equal(/\b(?:width|height|margin|padding|top|left)\s*:/.test(motion), false);
+  assert.match(motion, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(motion, /progress-breathe-reduced/);
+  assert.match(row, /order\.progressPulsing \? 'progress-breathe'/);
+  assert.match(detail, /item\.progressPulsing \? 'progress-breathe'/);
+});
+
 test("confirmed payment builds the task-list-to-detail navigation stack", () => {
   const payment = read("pages/create/payment.js");
   const orders = read("pages/orders/index.js");

@@ -51,7 +51,11 @@ def test_empty_database_upgrades_directly_to_head(
     worker_columns = {
         column["name"] for column in inspect(engine).get_columns("workers")
     }
+    job_columns = {
+        column["name"] for column in inspect(engine).get_columns("grading_jobs")
+    }
     assert PHASE_03_WORKER_COLUMNS <= worker_columns
+    assert "current_phase" in job_columns
     assert "version" not in worker_columns
     engine.dispose()
 

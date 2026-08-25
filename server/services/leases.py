@@ -201,6 +201,7 @@ class LeaseService:
                 now = datetime.now(timezone.utc)
                 require_job_transition(JobState(job.state), JobState.LEASED)
                 job.state = JobState.LEASED
+                job.current_phase = None
                 job.worker_id = worker_id
                 job.lease_version = job.lease_version + 1
                 job.ack_deadline = now + timedelta(seconds=ACK_SECONDS)
@@ -368,6 +369,8 @@ class LeaseService:
             )
             now = datetime.now(timezone.utc)
             job.lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
+            if phase is not None:
+                job.current_phase = phase
             session.add(job)
 
             worker = session.get(Worker, worker_id)

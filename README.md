@@ -178,7 +178,7 @@ GRADER_TEST_MYSQL_URL='mysql+pymysql://root@127.0.0.1:3306/grader_test' \
   .venv/bin/python -m pytest tests/integration tests/server/test_scheduler_lock.py -q
 ```
 
-数据库结构只通过新增 Alembic migration 修改；当前迁移 head 为 `0007`。
+数据库结构只通过新增 Alembic migration 修改；当前迁移 head 为 `0008`。
 
 ## 必须保持的边界
 

@@ -8,10 +8,14 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Final, Mapping
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.orm import Session
 
 from server.domain.eta import EtaRange, estimate_ranges
+from server.domain.progress import (
+    RUNTIME_PROGRESS_STAGES,
+    ProgressStage,
+)
 from server.domain.states import JobState, OrderState
 from server.models import (
     Appeal,
@@ -75,6 +79,7 @@ class InvalidCursor(ValueError):
 class OrderSummary:
     order: Order
     quote: QuoteSession
+    job: GradingJob | None = None
 
 
 @dataclass(frozen=True)
@@ -119,10 +124,37 @@ def decode_cursor(cursor: str) -> tuple[datetime, str]:
 
 def _owned_orders(owner_user_id: str) -> Select:
     return (
-        select(Order, QuoteSession)
+        select(Order, QuoteSession, GradingJob)
         .join(QuoteSession, QuoteSession.id == Order.quote_session_id)
+        .outerjoin(
+            GradingJob,
+            and_(
+                GradingJob.order_id == Order.id,
+                GradingJob.round_number == Order.current_round_number,
+            ),
+        )
         .where(QuoteSession.owner_user_id == owner_user_id)
     )
+
+
+def progress_stage_for_job(job: GradingJob | None) -> ProgressStage | None:
+    """Resolve one trusted Job into the small public progress vocabulary."""
+    if job is None:
+        return None
+    state = JobState(job.state)
+    if state is JobState.QUEUED:
+        return ProgressStage.QUEUED
+    if state is JobState.LEASED:
+        return ProgressStage.ASSIGNED
+    if state is JobState.RUNNING:
+        if job.current_phase in RUNTIME_PROGRESS_STAGES:
+            return ProgressStage(job.current_phase)
+        return ProgressStage.ASSIGNED
+    if state is JobState.UPLOADING:
+        return ProgressStage.UPLOADING
+    if state is JobState.WORKER_EXCEPTION:
+        return ProgressStage.SYSTEM_PROCESSING
+    return None
 
 
 def list_orders(
@@ -159,13 +191,34 @@ def list_orders(
 
     has_more = len(rows) > page_size
     visible = rows[:page_size]
-    items = tuple(OrderSummary(order=row[0], quote=row[1]) for row in visible)
+    items = tuple(
+        OrderSummary(order=row[0], quote=row[1], job=row[2]) for row in visible
+    )
     next_cursor = (
         encode_cursor(items[-1].order.created_at, items[-1].order.id)
         if has_more and items
         else None
     )
     return OrderPage(items=items, next_cursor=next_cursor)
+
+
+def get_owned_order_progress(
+    *,
+    session: Session,
+    owner_user_id: str,
+    order_ids: tuple[str, ...],
+) -> tuple[OrderSummary, ...]:
+    """Return progress for the requested owned orders, preserving input order."""
+    if not order_ids:
+        return ()
+    rows = session.execute(
+        _owned_orders(owner_user_id).where(Order.id.in_(order_ids))
+    ).all()
+    by_id = {
+        row[0].id: OrderSummary(order=row[0], quote=row[1], job=row[2])
+        for row in rows
+    }
+    return tuple(by_id[order_id] for order_id in order_ids if order_id in by_id)
 
 
 def get_order_detail(
@@ -180,7 +233,7 @@ def get_order_detail(
     ).one_or_none()
     if row is None:
         return None
-    order, quote = row
+    order, quote, _current_job = row
     rounds = session.scalars(
         select(GradingRound)
         .where(GradingRound.order_id == order.id)

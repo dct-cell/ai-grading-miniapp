@@ -87,6 +87,7 @@ EXPECTED_COLUMNS = {
         "order_id",
         "round_number",
         "state",
+        "current_phase",
         "queued_at",
         "worker_id",
         "lease_version",
@@ -248,6 +249,7 @@ EXPECTED_NULLABLE_COLUMNS = {
     "file_objects": set(),
     "grading_jobs": {
         "worker_id",
+        "current_phase",
         "lease_expires_at",
         "ack_deadline",
         "bundle_download_tokens",

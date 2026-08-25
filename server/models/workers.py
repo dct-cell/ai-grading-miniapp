@@ -69,6 +69,7 @@ class GradingJob(TimestampMixin, Base):
     )
     round_number: Mapped[int] = mapped_column(Integer, nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_phase: Mapped[str | None] = mapped_column(String(64), nullable=True)
     queued_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     worker_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("workers.worker_id"), nullable=True

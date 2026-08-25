@@ -7,7 +7,7 @@
   role="button"
   aria-label="{{order.standardText}}·{{order.stateText}}"
 >
-  <view class="order-row__mark"><view class="order-row__mark-inner" /></view>
+  <view class="order-row__mark {{order.progressPulsing ? 'progress-breathe' : ''}}"><view class="order-row__mark-inner" /></view>
   <view class="order-row__main">
     <view class="order-row__head">
       <view class="order-row__title">{{order.standardText}}</view>

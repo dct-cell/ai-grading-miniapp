@@ -29,7 +29,7 @@
     <view class="timeline list-surface">
       <view wx:for="{{rounds}}" wx:key="round_number" class="timeline__item">
         <view class="timeline__rail">
-          <view class="timeline__dot" />
+          <view class="timeline__dot {{item.progressPulsing ? 'progress-breathe' : ''}}" />
           <view wx:if="{{index < rounds.length - 1}}" class="timeline__line" />
         </view>
         <view class="timeline__copy">

@@ -245,6 +245,25 @@ def test_renewal_extends_from_server_time(
         ) < 5
 
 
+def test_renewal_persists_the_latest_runtime_phase(
+    worker_client: TestClient,
+    worker_a: str,
+    running: dict,
+    session_factory: sessionmaker[Session],
+) -> None:
+    response = renew(
+        worker_client,
+        worker_a,
+        running["job_id"],
+        running["lease_version"],
+        phase="verifying",
+    )
+
+    assert response.status_code == 200
+    with session_factory() as session:
+        assert session.get(GradingJob, running["job_id"]).current_phase == "verifying"
+
+
 def test_renewal_ignores_a_client_supplied_expiry(
     worker_client: TestClient,
     worker_a: str,

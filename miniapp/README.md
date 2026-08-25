@@ -17,7 +17,7 @@
 | `services/auth.js` | `ensureLogin()`：先复用会话并用 `GET /api/v1/me` 校验，失效才重新登录 |
 | `services/quotes.js` | 创建报价；一个文件走 `wx.uploadFile`，两个文件走自建 multipart |
 | `services/payments.js` | 预支付 + **轮询服务端确认**；`PaymentUnconfirmed` 表示未确认 |
-| `services/orders.js` | 订单分页与 `createOrderPoller`（15 秒、可见时轮询、stop 时真正清 timer） |
+| `services/orders.js` | 订单分页、详情与列表进度轮询（15 秒、可见时轮询、stop 时真正清 timer） |
 | `services/downloads.js` | 结果下载与结果摘要读取；401/403/410 触发刷新 |
 | `services/aftersales.js` | 验收 / 复核 / 退款；动作只来自 `available_actions` |
 | `utils/` | 格式化、订单状态词表、multipart 编码 |
@@ -31,7 +31,7 @@ cd miniapp
 npm test          # Node 内置 node:test，无需任何第三方框架，不需要微信开发者工具
 ```
 
-当前 **98 项通过**。测试全部在纯 Node 下运行：`wx.request` / `wx.uploadFile` /
+当前 **134 项通过**。测试全部在纯 Node 下运行：`wx.request` / `wx.uploadFile` /
 `wx.downloadFile` 都通过依赖注入传入，源码里不依赖真实 `wx` 全局对象。
 
 `tests/structure.test.js` 是对源码的结构断言，用于守住几条不能回退的约定：
@@ -97,7 +97,7 @@ npm test          # Node 内置 node:test，无需任何第三方框架，不需
 | 1 | 打开小程序 | 首页显示引导（新账号）或订单概览；「我的」页显示 `u-` 开头的用户标识 | 400 → `.env` 不是 staging/development，或 code 不以 `test-` 开头；401 → 检查 `GET /api/v1/me`；网络失败 → `baseUrl` 与域名跳过设置 |
 | 2 | 「批改」→ 选择答卷 PDF，可选再选参考答案 | 显示文件名与大小；答卷必选，参考答案标注「不计价」 | 选不到文件 → 需从聊天记录选择（`chooseMessageFile`）；请先把 PDF 发给「文件传输助手」 |
 | 3 | 选赛制 → 上传获取报价 → 确认支付 | 报价页显示页数、单价、合计；**页数只由答卷决定**；支付后跳转订单详情且状态为排队中 | 400 → PDF 加密/损坏/超页数；上传中离开会被拦截提示；报价过期需重新上传 |
-| 4 | 等待 Worker 批改 | 状态依次变为批改中 → 待验收；有就绪 Worker 时显示服务端 ETA 区间 | 一直排队 → 没有在线 Worker；显示「系统处理中」→ 任务 `worker_exception`，需查 Worker 日志 |
+| 4 | 等待 Worker 批改 | 列表显示短进度、详情显示完整进度，依次覆盖读取答卷、理解题目、核验、评分、报告与上传，最终变为待验收；实际批改期间圆点缓慢呼吸 | 一直排队 → 没有在线 Worker；显示「系统处理中」→ 任务 `worker_exception`，需查 Worker 日志 |
 | 5 | 详情页下载结果 PDF | 系统阅读器打开批改 PDF；页数应为答卷页数 + 1；摘要区显示总分 | 410 → 该订单已退款；404 → 轮次未交付；打不开 → `wx.openDocument` 需要 `fileType: 'pdf'` |
 | 6 | 申请复核 → 交付后申请退款 | 复核页**没有文件选择入口**且显示原答卷信息，提交后订单进入复核排队；退款页只显示全额、不能改金额；退款成功后**再次下载被拒（410）** | 复核按钮不出现 → `available_actions` 不含 `review`（V2 没有复核）；退款后仍能下载 → 说明 `downloads_revoked_at` 未被检查，属严重缺陷 |
 

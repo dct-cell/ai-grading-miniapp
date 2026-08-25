@@ -1,3 +1,5 @@
+@import "../../styles/progress-motion.wxss";
+
 .detail-page {
   padding-top: var(--space-screen-top);
 }

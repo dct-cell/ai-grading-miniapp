@@ -8,10 +8,17 @@ import {
   filterForState,
   hasSystemException,
   isActive,
+  isGradingState,
+  isPulsingProgress,
+  progressLabel,
   roundStateLabel,
   stateLabel,
 } from "../utils/order-states.js";
-import { createOrderPoller, createOrderService } from "../services/orders.js";
+import {
+  createOrderPoller,
+  createOrderProgressPoller,
+  createOrderService,
+} from "../services/orders.js";
 import { decorateSummary } from "../utils/decorate.js";
 import { DownloadRefused, createDownloadService, normalizeSummary } from "../services/downloads.js";
 import { ApiError } from "../services/api.js";
@@ -67,6 +74,51 @@ test("only orders with outstanding work are polled", () => {
   assert.equal(isActive("v1_delivered"), false);
   assert.equal(isActive("accepted"), false);
   assert.equal(isActive("refunded"), false);
+  assert.equal(isGradingState("v1_running"), true);
+  assert.equal(isGradingState("awaiting_payment"), false);
+});
+
+test("progress stages use short list labels and complete detail labels", () => {
+  const labels = {
+    queued: ["排队中", "排队中"],
+    assigned: ["准备批改", "正在准备批改"],
+    preparing: ["读取答卷", "正在读取答卷"],
+    understanding: ["理解题目", "正在理解题目与作答"],
+    rubric: ["整理评分点", "正在整理评分要点"],
+    decomposing: ["梳理解答", "正在梳理解答步骤"],
+    verifying: ["核验推理", "正在核验关键推理"],
+    scoring: ["计算得分", "正在计算得分"],
+    auditing: ["复核判分", "正在复核判分"],
+    reporting: ["生成报告", "正在生成批改报告"],
+    validating: ["检查报告", "正在检查批改报告"],
+    uploading: ["上传结果", "正在上传批改结果"],
+    system_processing: ["系统处理中", "系统处理中"],
+  };
+  for (const [stage, [short, full]] of Object.entries(labels)) {
+    assert.equal(progressLabel(stage), short, stage);
+    assert.equal(progressLabel(stage, { full: true }), full, stage);
+  }
+  assert.equal(progressLabel("unknown"), "");
+});
+
+test("only actual grading and upload stages pulse", () => {
+  for (const stage of [
+    "preparing",
+    "understanding",
+    "rubric",
+    "decomposing",
+    "verifying",
+    "scoring",
+    "auditing",
+    "reporting",
+    "validating",
+    "uploading",
+  ]) {
+    assert.equal(isPulsingProgress(stage), true, stage);
+  }
+  for (const stage of ["queued", "assigned", "system_processing", undefined]) {
+    assert.equal(isPulsingProgress(stage), false, String(stage));
+  }
 });
 
 test("delivered rounds are listed newest first", () => {
@@ -113,6 +165,25 @@ test("a list item renders even though the list omits eta and rounds", () => {
   assert.equal(view.etaText, "", "no eta on list items, so nothing is shown");
   assert.equal(view.amountText, "¥20.00");
 });
+
+test("summary decoration chooses short or full progress without changing state", () => {
+  const order = {
+    id: "o-progress",
+    state: "v1_running",
+    progress_stage: "verifying",
+    grading_standard: "imo",
+    page_count: 2,
+    paid_amount_cents: 2000,
+    created_at: "2026-08-10T00:00:00Z",
+  };
+
+  assert.equal(decorateSummary(order).stateText, "核验推理");
+  assert.equal(
+    decorateSummary(order, { fullProgress: true }).stateText,
+    "正在核验关键推理",
+  );
+  assert.equal(decorateSummary(order).progressPulsing, true);
+});
 test("passes the category to the server and reports the end of the list", async () => {
   const urls = [];
   const service = createOrderService({
@@ -146,6 +217,25 @@ test("forwards an encoded cursor on later pages", async () => {
   await service.list({ cursor: "abc+def/==" });
 
   assert.match(urls[0], /cursor=abc%2Bdef%2F%3D%3D/);
+});
+
+test("batch progress deduplicates and caps visible order ids", async () => {
+  const urls = [];
+  const service = createOrderService({
+    api: {
+      get: async url => {
+        urls.push(url);
+        return { items: [] };
+      },
+    },
+  });
+  const ids = ["first", "first", ...Array.from({ length: 60 }, (_, i) => `o-${i}`)];
+
+  await service.progress(ids);
+
+  assert.match(urls[0], /^\/api\/v1\/orders\/progress\?/);
+  assert.equal((urls[0].match(/order_ids=/g) || []).length, 50);
+  assert.equal((urls[0].match(/order_ids=first/g) || []).length, 1);
 });
 
 /* ------------------------------------------------------------------ polling */
@@ -287,6 +377,36 @@ test("a polling error keeps polling instead of giving up", async () => {
   await clock.fire();
   assert.equal(calls, 2);
   poller.stop();
+});
+
+test("list progress polling is non-overlapping and stops cleanly", async () => {
+  const clock = fakeClock();
+  let release;
+  let fetches = 0;
+  const updates = [];
+  const poller = createOrderProgressPoller({
+    fetchProgress: () => {
+      fetches += 1;
+      return new Promise(resolve => {
+        release = () => resolve({ items: [{ id: "o1", progress_stage: "scoring" }] });
+      });
+    },
+    onUpdate: update => updates.push(update),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+
+  poller.start();
+  const inFlight = clock.fire();
+  assert.equal(fetches, 1);
+  assert.equal(clock.pending(), 0, "no second timer while a request is in flight");
+  poller.stop();
+  release();
+  await inFlight;
+
+  assert.deepEqual(updates, [], "an unloaded list must not receive an update");
+  assert.equal(clock.pending(), 0);
+  assert.equal(poller.isRunning(), false);
 });
 
 /* ---------------------------------------------------------------- downloads */

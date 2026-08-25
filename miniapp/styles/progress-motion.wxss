@@ -1,0 +1,32 @@
+.progress-breathe {
+  transform-origin: center;
+  animation: progress-breathe var(--motion-breathe) var(--ease-in-out) infinite;
+}
+
+@keyframes progress-breathe {
+  0%,
+  100% {
+    transform: scale(0.8);
+  }
+
+  50% {
+    transform: scale(1.14);
+  }
+}
+
+@keyframes progress-breathe-reduced {
+  from {
+    opacity: 0.82;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-breathe {
+    transform: none;
+    animation: progress-breathe-reduced var(--motion-breathe) linear infinite alternate;
+  }
+}

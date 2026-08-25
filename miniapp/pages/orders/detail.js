@@ -2,7 +2,13 @@ import { createOrderPoller } from "../../services/orders.js";
 import { DownloadRefused } from "../../services/downloads.js";
 import { DETAIL_ACTION_KINDS, resolveDetailActions } from "../../services/detail-actions.js";
 import { decorateSummary } from "../../utils/decorate.js";
-import { deliveredRounds, isActive, roundStateLabel } from "../../utils/order-states.js";
+import {
+  deliveredRounds,
+  isActive,
+  isPulsingProgress,
+  progressLabel,
+  roundStateLabel,
+} from "../../utils/order-states.js";
 import { formatCents, formatDateTime, formatDeadline } from "../../utils/format.js";
 import { ACTION_LABELS, actionsFor } from "../../services/aftersales.js";
 
@@ -90,10 +96,15 @@ Page({
     this.setData({
       loading: false,
       error: "",
-      order: decorateSummary(order),
+      order: decorateSummary(order, { fullProgress: true }),
       rounds: (order.rounds || []).map(round => ({
         ...round,
-        stateText: roundStateLabel(round.state),
+        stateText:
+          progressLabel(round.progress_stage, { full: true }) ||
+          roundStateLabel(round.state),
+        progressPulsing:
+          round.round_number === order.current_round_number &&
+          isPulsingProgress(round.progress_stage),
         deliveredText: formatDateTime(round.delivered_at),
       })),
       // Rendered straight from the server's list: the client never decides

@@ -62,8 +62,9 @@ Use the following order. Do not go backwards.
 6. `scoring`: map verified evidence to scoring checkpoints. Draft
    `output/internal/score-audit.json` with the initial judgment.
 7. `auditing`: challenge high scores, recover valid alternative credit in low
-   scores, remove duplicate credit/deductions, check caps and arithmetic, then
-   update and freeze `score-audit.json` with the final judgment.
+   scores, remove duplicate credit/deductions, verify that every awarded
+   checkpoint has all declared dependencies satisfied, check caps and arithmetic,
+   then update and freeze `score-audit.json` with the final judgment.
 8. `reporting`: create `output/grading.json` only from the audited result. For
    `summary_report`, build `output/report.pdf`; for `annotated_review`, build
    `output/annotated.pdf`. The scoring judgment is shared; only public detail and
@@ -323,6 +324,14 @@ post-audit mapping: an awarded checkpoint earns exactly one profile unit and an
 unawarded checkpoint earns zero. Never award two checkpoints sharing a slot.
 Evidence step IDs must come from the proof map. A root error appears at most once
 in `root_error_impacts`; its withheld slots must not also be awarded.
+
+Before awarding a checkpoint, close its complete `depends_on` chain. A dependency
+written as a checkpoint ID requires that exact checkpoint to be awarded; a
+dependency written as a slot ID is satisfied by any awarded checkpoint in that
+slot. Do not delete, weaken, or rewrite a dependency merely to make the audit
+pass. If an alternative route changes which dependency is mathematically needed,
+represent that route with the appropriate alternative checkpoint and then audit
+the resulting slot exactly once.
 
 `initial_score` preserves the score before the skeptical review. The checkpoint
 mapping and `final_score` contain the reviewed decision. If a listed cap applies,

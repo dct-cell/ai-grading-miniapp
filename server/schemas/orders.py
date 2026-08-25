@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from server.domain.progress import ProgressStage
 from server.domain.service_tiers import ServiceTier
 from server.schemas.quotes import GradingStandard
 
@@ -12,6 +13,7 @@ class OrderRoundView(BaseModel):
     round_number: int
     service_tier: ServiceTier
     state: str
+    progress_stage: ProgressStage | None = None
     delivered_at: datetime | None
 
 
@@ -25,7 +27,19 @@ class OrderSummaryView(BaseModel):
     page_count: int
     paid_amount_cents: int
     current_round_number: int
+    progress_stage: ProgressStage | None = None
     created_at: datetime
+
+
+class OrderProgressView(BaseModel):
+    id: str
+    state: str
+    current_round_number: int
+    progress_stage: ProgressStage | None = None
+
+
+class OrderProgressPageView(BaseModel):
+    items: list[OrderProgressView]
 
 
 class OrderEtaView(BaseModel):

@@ -10,6 +10,8 @@ from server.schemas.orders import (
     OrderDetailView,
     OrderEtaView,
     OrderPageView,
+    OrderProgressPageView,
+    OrderProgressView,
     OrderRoundView,
     OrderSummaryView,
 )
@@ -20,8 +22,10 @@ from server.services.orders import (
     OrderCategory,
     OrderSummary,
     category_of,
+    get_owned_order_progress,
     get_order_detail,
     list_orders,
+    progress_stage_for_job,
 )
 
 
@@ -44,6 +48,7 @@ def _summary(entry: OrderSummary) -> OrderSummaryView:
         page_count=entry.quote.page_count,
         paid_amount_cents=entry.order.paid_amount_cents,
         current_round_number=entry.order.current_round_number,
+        progress_stage=progress_stage_for_job(entry.job),
         created_at=entry.order.created_at,
     )
 
@@ -77,6 +82,37 @@ def list_owned_orders(
     )
 
 
+@router.get("/progress", response_model=OrderProgressPageView)
+def read_owned_order_progress(
+    user: CurrentUser,
+    session: DatabaseSession,
+    order_ids: Annotated[list[str] | None, Query()] = None,
+) -> OrderProgressPageView:
+    """Refresh visible rows without exposing or reloading full order details."""
+    if not order_ids or len(order_ids) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="每次必须查询 1 至 50 个订单。",
+        )
+    unique_ids = tuple(dict.fromkeys(order_ids))
+    items = get_owned_order_progress(
+        session=session,
+        owner_user_id=user.id,
+        order_ids=unique_ids,
+    )
+    return OrderProgressPageView(
+        items=[
+            OrderProgressView(
+                id=item.order.id,
+                state=item.order.state,
+                current_round_number=item.order.current_round_number,
+                progress_stage=progress_stage_for_job(item.job),
+            )
+            for item in items
+        ]
+    )
+
+
 @router.get("/{order_id}", response_model=OrderDetailView)
 def read_owned_order(
     order_id: str,
@@ -91,7 +127,17 @@ def read_owned_order(
     if detail is None:
         raise _ORDER_NOT_FOUND
 
-    summary = _summary(OrderSummary(order=detail.order, quote=detail.quote))
+    current_job = next(
+        (
+            job
+            for record, job in detail.rounds
+            if record.round_number == detail.order.current_round_number
+        ),
+        None,
+    )
+    summary = _summary(
+        OrderSummary(order=detail.order, quote=detail.quote, job=current_job)
+    )
     return OrderDetailView(
         **summary.model_dump(),
         note=detail.quote.note,
@@ -113,6 +159,7 @@ def read_owned_order(
                 round_number=record.round_number,
                 service_tier=record.service_tier,
                 state="delivered" if job is None else job.state,
+                progress_stage=progress_stage_for_job(job),
                 delivered_at=record.delivered_at,
             )
             for record, job in detail.rounds

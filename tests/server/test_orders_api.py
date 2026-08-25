@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from server.domain.states import OrderState
-from server.models import Order
+from server.domain.states import JobState, OrderState
+from server.models import GradingJob, Order
 from tests.server.conftest import authenticate, create_quote
 
 
@@ -147,6 +147,7 @@ def test_order_detail_exposes_the_queued_v1_round(
             "round_number": 1,
             "service_tier": "annotated_review",
             "state": "queued",
+            "progress_stage": "queued",
             "delivered_at": None,
         }
     ]
@@ -169,8 +170,81 @@ def test_order_list_items_carry_the_summary_fields(
         "page_count",
         "paid_amount_cents",
         "current_round_number",
+        "progress_stage",
         "created_at",
     }
+    assert item["progress_stage"] == "queued"
+
+
+@pytest.mark.parametrize(
+    ("job_state", "current_phase", "expected"),
+    [
+        (JobState.QUEUED, None, "queued"),
+        (JobState.LEASED, None, "assigned"),
+        (JobState.RUNNING, None, "assigned"),
+        (JobState.RUNNING, "grading", "assigned"),
+        (JobState.RUNNING, "understanding", "understanding"),
+        (JobState.RUNNING, "validating", "validating"),
+        (JobState.UPLOADING, "validating", "uploading"),
+        (JobState.WORKER_EXCEPTION, "scoring", "system_processing"),
+        (JobState.SUCCEEDED, "validating", None),
+        (JobState.CANCELLED, "verifying", None),
+    ],
+)
+def test_public_progress_uses_only_the_stable_stage_vocabulary(
+    authenticated_client: TestClient,
+    session_factory: sessionmaker[Session],
+    job_state: JobState,
+    current_phase: str | None,
+    expected: str | None,
+) -> None:
+    quote_id = place_order(authenticated_client)
+    order_id = order_id_for_quote(session_factory, quote_id)
+    with session_factory() as session:
+        job = session.scalars(
+            select(GradingJob).where(GradingJob.order_id == order_id)
+        ).one()
+        job.state = job_state
+        job.current_phase = current_phase
+        session.add(job)
+        session.commit()
+
+    body = authenticated_client.get(
+        "/api/v1/orders/progress", params=[("order_ids", order_id)]
+    ).json()
+
+    assert body == {
+        "items": [
+            {
+                "id": order_id,
+                "state": OrderState.V1_QUEUED,
+                "current_round_number": 1,
+                "progress_stage": expected,
+            }
+        ]
+    }
+
+
+def test_progress_batch_is_bounded_and_never_returns_another_users_order(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    authenticate(client, "test-progress-owner")
+    owned = order_id_for_quote(session_factory, place_order(client))
+    authenticate(client, "test-progress-other")
+    foreign = order_id_for_quote(session_factory, place_order(client))
+    authenticate(client, "test-progress-owner")
+
+    response = client.get(
+        "/api/v1/orders/progress",
+        params=[("order_ids", owned), ("order_ids", foreign)],
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [owned]
+    assert client.get("/api/v1/orders/progress").status_code == 422
+    too_many = [("order_ids", f"order-{index}") for index in range(51)]
+    assert client.get("/api/v1/orders/progress", params=too_many).status_code == 422
 
 
 @pytest.mark.parametrize(
