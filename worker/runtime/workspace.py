@@ -58,6 +58,7 @@ _REQUIRED_SKILL_FILES = (
     "scripts/build_summary_pdf.py",
     "scripts/render_pdf.py",
     "scripts/report_stage.py",
+    "references/summary-process.md",
 )
 
 

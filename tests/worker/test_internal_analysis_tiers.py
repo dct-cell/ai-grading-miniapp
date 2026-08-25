@@ -7,7 +7,6 @@ import pytest
 
 from worker.runtime.legacy.codex_runner import (
     _build_grading_prompt,
-    _build_validation_repair_prompt,
 )
 from worker.runtime.legacy.internal_analysis import (
     InternalAnalysisValidationError,
@@ -182,14 +181,15 @@ def _validate(job_dir: Path, *, tier: str, grading: dict[str, object]) -> None:
     )
 
 
-def test_summary_accepts_location_free_minimal_evidence(tmp_path: Path) -> None:
+def test_summary_no_longer_accepts_the_annotated_five_file_contract(
+    tmp_path: Path,
+) -> None:
     grading = _write_internal_artifacts(tmp_path, include_locations=False)
-    _validate(tmp_path, tier="summary_report", grading=grading)
-
-
-def test_summary_keeps_older_positioned_artifacts_compatible(tmp_path: Path) -> None:
-    grading = _write_internal_artifacts(tmp_path, include_locations=True)
-    _validate(tmp_path, tier="summary_report", grading=grading)
+    with pytest.raises(
+        InternalAnalysisValidationError,
+        match="summary-analysis.json",
+    ):
+        _validate(tmp_path, tier="summary_report", grading=grading)
 
 
 def test_annotated_still_requires_source_locations(tmp_path: Path) -> None:
@@ -214,14 +214,20 @@ def test_summary_prompt_forbids_location_work_but_keeps_mathematical_checks() ->
     )
 
     assert "简明报告及内部证据均不做页内定位" in prompt
-    assert "proof-map 只记录" in prompt
-    assert "完整核验所有计分依据" in prompt
+    assert "summary-analysis.json 和 summary-audit.json" in prompt
+    assert "不得生成 annotated 流程的五份内部文件" in prompt
+    assert "完整核验决定分数的依据" in prompt
     assert "疑似笔误须按字面写法" in prompt
     assert "发现一个错误后仍须检查" in prompt
     assert "扣分只作用于实际受影响的评分点" in prompt
-    assert "完整依赖链" in prompt
-    assert "具体评分点 ID 依赖" in prompt
-    assert "不得为通过校验而删除或弱化依赖" in prompt
+    assert "冻结 summary-audit" in prompt
+    for annotated_artifact in (
+        "marking-scheme",
+        "proof-map",
+        "verification",
+        "score-audit",
+    ):
+        assert annotated_artifact not in prompt
 
 
 def test_annotated_prompt_retains_selective_location_work() -> None:
@@ -233,15 +239,21 @@ def test_annotated_prompt_retains_selective_location_work() -> None:
 
     assert "真正需要核对的位置" in prompt
     assert "内部证据均不做页内定位" not in prompt
+    assert "完整依赖链" in prompt
+    assert "具体评分点 ID 依赖" in prompt
 
 
-def test_validation_repair_prompt_is_bounded_and_preserves_dependencies() -> None:
-    prompt = _build_validation_repair_prompt(
-        "评分点 p1-u6-main 在依赖未满足时被计分。"
+@pytest.mark.parametrize("tier", ["summary_report", "annotated_review"])
+def test_prompt_keeps_validation_and_two_corrections_inside_one_codex(
+    tier: str,
+) -> None:
+    prompt = _build_grading_prompt(
+        profile={"service_tier": tier},
+        has_instructions=False,
+        has_reference=False,
     )
 
-    assert "不得从头重新批改" in prompt
-    assert "p1-u6-main" in prompt
-    assert "不得删除、弱化或改写数学依赖" in prompt
-    assert "评分槽位 ID 依赖" in prompt
-    assert "同步重建 grading.json、报告 PDF" in prompt
+    assert "python -I -m worker.runtime.legacy.validate_workspace --job-dir ." in prompt
+    assert "失败时利用当前上下文修正并重跑" in prompt
+    assert "最多修正两轮" in prompt
+    assert "校验通过后不得再修改任何输出" in prompt

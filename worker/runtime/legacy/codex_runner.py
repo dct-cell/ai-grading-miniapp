@@ -572,6 +572,17 @@ def _load_manifest(
     return payload
 
 
+def validate_workspace(job_dir: Path) -> dict[str, Any]:
+    """Validate the final workspace through the one trusted entry point."""
+    workspace = Path(job_dir).resolve()
+    profile = _load_profile(workspace / "config" / "grading-profile.json")
+    return _load_manifest(
+        workspace / "manifest.json",
+        job_dir=workspace,
+        profile=profile,
+    )
+
+
 def _build_grading_prompt(
     *,
     profile: dict[str, Any],
@@ -580,13 +591,23 @@ def _build_grading_prompt(
 ) -> str:
     service_tier = profile["service_tier"]
     output_instruction = (
-        "生成 output/report.pdf；简明报告及内部证据均不做页内定位，"
-        "不得生成 source_quote、bbox、bboxes、pages、逐页 findings 或编号标注。"
-        "proof-map 只记录足以支撑评分点、根本错误和最终分数的关键数学单元，"
-        "合并普通计算与连续等价推导；仍须完整核验所有计分依据、必要条件、"
-        "根本错误和最终结论。"
+        "生成 output/report.pdf；只生成 summary-analysis.json 和 summary-audit.json"
+        " 两份紧凑内部证据，不得生成 annotated 流程的五份内部文件。"
+        "简明报告及内部证据均不做页内定位，不得生成 source_quote、bbox、bboxes、"
+        "公开 pages、逐页 findings 或编号标注；仍须完整核验决定分数的依据、"
+        "必要条件、根本错误和最终结论。"
         if service_tier == "summary_report"
         else "生成 output/annotated.pdf；只标注关键得分依据、根本错误和真正需要核对的位置。"
+    )
+    audit_instruction = (
+        "冻结 summary-audit 前须检查笔误、独立有效成果、重复扣分、分档与总分；"
+        "最终评分只能引用 summary-analysis 中核验为 valid 的关键证据。"
+        if service_tier == "summary_report"
+        else (
+            "冻结 score-audit 前必须检查每个已授予评分点的完整依赖链："
+            "具体评分点 ID 依赖须由该评分点本身满足，评分槽位 ID 依赖才可由"
+            "同槽位的等价评分点满足；不得为通过校验而删除或弱化依赖。"
+        )
     )
     prompt = (
         "使用 $olympiad-grader 批改 input/submission.pdf。"
@@ -595,15 +616,16 @@ def _build_grading_prompt(
         "赛制、技能中的分阶段评分契约、精简标注规则、文字版式规范与 TeX 格式，"
         "依次上报阶段并完成 output/internal/ 中的全部内部证据文件；"
         "先忠实重建并核验学生论证，再映射得分并做一次怀疑式复核。"
-        "冻结 score-audit 前必须检查每个已授予评分点的完整依赖链："
-        "具体评分点 ID 依赖须由该评分点本身满足，评分槽位 ID 依赖才可由"
-        "同槽位的等价评分点满足；不得为通过校验而删除或弱化依赖。"
+        f"{audit_instruction}"
         "疑似笔误须按字面写法和上下文唯一可恢复的本意分别核验；"
         "发现一个错误后仍须检查其余独立步骤、必要条件和最终结论，"
         "扣分只作用于实际受影响的评分点。"
         f"{output_instruction}不要寻找或渲染任何历史样板 PDF。"
         "必须逐页渲染检查最终 PDF。"
-        "最后只返回符合 config/manifest.schema.json 的 JSON。"
+        "在同一次 Codex 进程的 validating 阶段，先写 manifest.json 草稿，再运行"
+        " `python -I -m worker.runtime.legacy.validate_workspace --job-dir .`；"
+        "失败时利用当前上下文修正并重跑，最多修正两轮。校验通过后不得再修改"
+        "任何输出，最后只返回与 manifest.json 完全相同且符合 Schema 的 JSON。"
     )
     if has_reference:
         prompt += (
@@ -621,22 +643,6 @@ def _build_grading_prompt(
             "应依据 PDF 本身完成批改，并在报告中简短说明不确定性。"
         )
     return prompt
-
-
-def _build_validation_repair_prompt(validation_error: str) -> str:
-    """Ask for one bounded correction of existing artifacts, not a re-grade."""
-    return (
-        "继续使用 $olympiad-grader。上一次批改已经完成数学分析和报告生成，"
-        "但最终内部一致性校验失败："
-        f"{validation_error}。这是一次定向修正，不得从头重新批改。"
-        "读取现有 output/internal/、output/grading.json、报告 PDF 和 manifest.json，"
-        "只修复校验指出的不一致及其必然影响。不得删除、弱化或改写数学依赖来"
-        "规避校验。具体评分点 ID 依赖必须由该评分点本身满足；评分槽位 ID 依赖"
-        "才可由同槽位任一已授予评分点满足。重新计算受影响题目的评分点、总分和"
-        "审计字段；若分数或公开判断变化，同步重建 grading.json、报告 PDF 和"
-        "manifest.json。重新执行 validating 阶段的报告渲染与检查，最后只返回"
-        "符合 config/manifest.schema.json 的 JSON。"
-    )
 
 
 def _build_codex_command(
@@ -858,27 +864,15 @@ async def run_codex_job(
     has_instructions = bool(instructions)
 
     last_output = ""
-    attempt = 0
-    full_attempts = 0
-    validation_repair_error: str | None = None
-    validation_repair_attempted = False
-    while True:
-        attempt += 1
-        repairing = validation_repair_error is not None
-        if not repairing:
-            full_attempts += 1
-            _clear_attempt_outputs(job_dir, manifest_path)
+    for attempt in range(1, settings.max_codex_attempts + 1):
+        _clear_attempt_outputs(job_dir, manifest_path)
         await status_callback(
             attempts=attempt,
-            stage="validating" if repairing else "preparing",
+            stage="preparing",
             message=(
-                "正在修正评分记录的一致性…"
-                if repairing
-                else (
-                    GRADING_STAGE_LABELS["preparing"]
-                    if full_attempts == 1
-                    else "连接中断，正在自动重试…"
-                )
+                GRADING_STAGE_LABELS["preparing"]
+                if attempt == 1
+                else "连接中断，正在自动重试…"
             ),
         )
 
@@ -934,17 +928,11 @@ async def run_codex_job(
         try:
             try:
                 assert process.stdin is not None
-                if repairing:
-                    assert validation_repair_error is not None
-                    prompt = _build_validation_repair_prompt(
-                        validation_repair_error
-                    )
-                else:
-                    prompt = _build_grading_prompt(
-                        profile=profile,
-                        has_instructions=has_instructions,
-                        has_reference=(job_dir / "input" / "reference.pdf").is_file(),
-                    )
+                prompt = _build_grading_prompt(
+                    profile=profile,
+                    has_instructions=has_instructions,
+                    has_reference=(job_dir / "input" / "reference.pdf").is_file(),
+                )
                 process.stdin.write(prompt.encode("utf-8"))
                 await process.stdin.drain()
                 process.stdin.close()
@@ -976,33 +964,10 @@ async def run_codex_job(
         )
 
         if process.returncode == 0:
-            try:
-                manifest = _load_manifest(
-                    manifest_path, job_dir=job_dir, profile=profile
-                )
-            except CodexRunError as exc:
-                try:
-                    (logs_dir / "validation-error.log").write_text(
-                        str(exc) + "\n", encoding="utf-8"
-                    )
-                except OSError:
-                    pass
-                if exc.code == "bad_analysis" and not validation_repair_attempted:
-                    validation_repair_attempted = True
-                    validation_repair_error = str(exc)[:1000]
-                    continue
-                raise
+            manifest = _read_json_object(manifest_path, description="结果清单")
             return CodexRunResult(manifest=manifest)
 
-        if repairing:
-            raise CodexRunError(
-                f"{validation_repair_error} 自动修正未完成。",
-                code="bad_analysis",
-            )
-        if (
-            full_attempts < settings.max_codex_attempts
-            and is_transient_failure(last_output)
-        ):
+        if attempt < settings.max_codex_attempts and is_transient_failure(last_output):
             await asyncio.sleep(settings.retry_delay_seconds)
             continue
         break

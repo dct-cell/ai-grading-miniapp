@@ -70,7 +70,9 @@ Use the following order. Do not go backwards.
    `output/annotated.pdf`. The scoring judgment is shared; only public detail and
    report layout differ.
 9. `validating`: render and inspect the report, correct layout/content defects,
-   reopen the PDF, and return the manifest only after all files agree.
+   reopen the PDF, then follow `SKILL.md` to write the manifest draft and run the
+   trusted workspace validator. Use at most two correction rounds and stop editing
+   after it passes.
 
 Write JSON as UTF-8. Every internal artifact has these root fields:
 

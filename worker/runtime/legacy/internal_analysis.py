@@ -173,11 +173,6 @@ def validate_internal_analysis(
     intentionally does not require or attempt to validate a full reference proof.
     """
 
-    internal_dir = job_dir / "output" / "internal"
-    artifacts = {
-        key: _read_object(internal_dir / filename, filename)
-        for key, filename in REQUIRED_ARTIFACTS.items()
-    }
     service_tier = profile.get("service_tier")
     standard = profile.get("grading_standard")
     resolved_scope = grading.get("resolved_league_scope")
@@ -185,6 +180,28 @@ def validate_internal_analysis(
         _fail("内部校验收到未知服务档位。")
     if standard not in {"imo", "cmo", "league_second_round"}:
         _fail("内部校验收到未知评分标准。")
+    if service_tier == "summary_report":
+        from .summary_analysis import (
+            SummaryAnalysisValidationError,
+            validate_summary_analysis,
+        )
+
+        try:
+            validate_summary_analysis(
+                job_dir,
+                profile=profile,
+                grading=grading,
+                input_page_count=input_page_count,
+            )
+        except SummaryAnalysisValidationError as exc:
+            raise InternalAnalysisValidationError(str(exc)) from exc
+        return
+
+    internal_dir = job_dir / "output" / "internal"
+    artifacts = {
+        key: _read_object(internal_dir / filename, filename)
+        for key, filename in REQUIRED_ARTIFACTS.items()
+    }
     for key, payload in artifacts.items():
         _validate_header(payload, REQUIRED_ARTIFACTS[key], standard, resolved_scope)
 
